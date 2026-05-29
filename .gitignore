@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────
+# Secrets — NEVER commit these. Real keys live only in local .env
+# files (gitignored) or in the deployment's environment variables.
+# ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets.json
+.secrets/
+
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Research artifacts / generated output ───────────────────
+output/
+*.log
+*.tmp
+
+# ── Vercel / Node (frontend arrives later) ──────────────────
+.vercel/
+node_modules/
+.next/
+.turbo/
+npm-debug.log*
+
+# ── OS / editor ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
