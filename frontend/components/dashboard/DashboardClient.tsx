@@ -136,12 +136,9 @@ export default function DashboardClient() {
                 className="min-h-12 rounded-md border border-white/[0.08] bg-void px-3 text-sm text-fog-dim focus:outline-none focus:ring-2 focus:ring-lavender/40"
                 aria-label="Research domain"
               >
-                <option value="">Auto domain</option>
-                <option value="AI Supply Chain">AI Supply Chain</option>
-                <option value="Biotechnology">Biotechnology</option>
-                <option value="Semiconductor Infrastructure">Semiconductors</option>
-                <option value="Data Center Ecosystem">Data Center</option>
-                <option value="Frontier Technology">Frontier Tech</option>
+                <option value="">Auto detect</option>
+                <option value="AI Supply Chain">AI</option>
+                <option value="Biotechnology">Biotech</option>
               </select>
               <button
                 type="submit"
