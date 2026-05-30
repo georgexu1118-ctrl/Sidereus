@@ -1,0 +1,53 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Planet body: lit from upper-left, Monet purple palette -->
+    <radialGradient id="planet" cx="38%" cy="34%" r="72%">
+      <stop offset="0%" stop-color="#D7C9F2"/>
+      <stop offset="32%" stop-color="#B5A6D8"/>
+      <stop offset="66%" stop-color="#7A6EA8"/>
+      <stop offset="100%" stop-color="#3B3360"/>
+    </radialGradient>
+    <!-- Soft atmospheric glow around the planet -->
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="60%" stop-color="#B5A6D8" stop-opacity="0"/>
+      <stop offset="85%" stop-color="#B5A6D8" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#B5A6D8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E0B96A" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#B5A6D8" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#8FA9D8" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Black background -->
+  <rect width="64" height="64" rx="12" fill="#000000"/>
+
+  <!-- Distant stars -->
+  <circle cx="12" cy="14" r="0.9" fill="#F4F4F2" opacity="0.8"/>
+  <circle cx="52" cy="12" r="0.7" fill="#B5A6D8" opacity="0.7"/>
+  <circle cx="50" cy="50" r="0.8" fill="#F4F4F2" opacity="0.6"/>
+  <circle cx="15" cy="50" r="0.6" fill="#8FA9D8" opacity="0.6"/>
+
+  <!-- Atmospheric glow -->
+  <circle cx="32" cy="32" r="22" fill="url(#glow)"/>
+
+  <!-- Ring behind the planet -->
+  <ellipse cx="32" cy="33" rx="27" ry="9" fill="none" stroke="url(#ring)" stroke-width="2.2"
+           transform="rotate(-24 32 33)" opacity="0.85"/>
+
+  <!-- Planet body -->
+  <circle cx="32" cy="32" r="16" fill="url(#planet)"/>
+
+  <!-- Ring foreground arc (passes in front, bottom of planet) -->
+  <path d="M 11 41 A 27 9 -24 0 0 53 25" fill="none" stroke="url(#ring)" stroke-width="2.2"
+        transform="rotate(-24 32 33)" opacity="0.95" stroke-linecap="round"/>
+
+  <!-- Subtle surface bands -->
+  <ellipse cx="32" cy="32" rx="16" ry="16" fill="none"/>
+  <path d="M 19 28 Q 32 25 45 29" stroke="#5E6FA3" stroke-width="1.1" opacity="0.35" fill="none"/>
+  <path d="M 18 36 Q 32 40 46 35" stroke="#3B3360" stroke-width="1.2" opacity="0.4" fill="none"/>
+
+  <!-- Specular highlight -->
+  <circle cx="26" cy="26" r="3.4" fill="#FFFFFF" opacity="0.30"/>
+</svg>
