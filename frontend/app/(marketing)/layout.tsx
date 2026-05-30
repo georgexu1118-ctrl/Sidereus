@@ -1,4 +1,4 @@
-// Marketing layout - landing page
+﻿// Marketing layout - landing page
 // The atmospheric background is rendered here for the full-bleed experience.
 import Link from 'next/link'
 import { Zap } from 'lucide-react'
@@ -10,7 +10,7 @@ const NAV_LINKS = [
   { label: 'Biotech', href: '/biotech' },
 ]
 
-const APP_LOGO = '/logo-monet.webp'
+const APP_LOGO = '/sidereus-nuncius-logo.jpg'
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -23,8 +23,8 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
             <Link href="/" className="flex items-center gap-2.5">
               <img
                 src={APP_LOGO}
-                alt="Impression, Sunrise by Claude Monet"
-                className="w-7 h-7 rounded-md object-cover border border-white/20"
+                alt="Sidereus Nuncius title engraving"
+                className="h-8 w-11 rounded-md object-cover border border-white/20"
               />
               <span className="text-fog font-semibold tracking-tight">Sidereus</span>
             </Link>
@@ -72,8 +72,8 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
               <div className="flex items-center gap-2 mb-2">
                 <img
                   src={APP_LOGO}
-                  alt="Impression, Sunrise by Claude Monet"
-                  className="w-6 h-6 rounded object-cover border border-white/20"
+                  alt="Sidereus Nuncius title engraving"
+                  className="h-6 w-8 rounded object-cover border border-white/20"
                 />
                 <span className="text-fog font-semibold text-sm">Sidereus</span>
               </div>
@@ -105,7 +105,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="max-w-7xl mx-auto mt-10 pt-6 border-t border-white/[0.04] flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-fog-dim/60">� 2026 Sidereus Research. All rights reserved.</p>
+            <p className="text-xs text-fog-dim/60">© 2026 Sidereus Research. All rights reserved.</p>
             <p className="text-xs text-fog-dim/40">
               For professional and institutional use. Past performance is not indicative of future results.
             </p>
@@ -115,3 +115,4 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
     </div>
   )
 }
+

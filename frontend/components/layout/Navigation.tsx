@@ -34,7 +34,7 @@ const SECTOR_ITEMS = [
   { label: 'Frontier Tech', href: '/research?domain=frontier-technology', color: '#5E6FA3' },
 ]
 
-const APP_LOGO = '/logo-monet.webp'
+const APP_LOGO = '/sidereus-nuncius-logo.jpg'
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -50,8 +50,8 @@ export default function Navigation() {
         <div className="relative">
           <img
             src={APP_LOGO}
-            alt="Impression, Sunrise by Claude Monet"
-            className="w-8 h-8 rounded-lg object-cover border border-white/20"
+            alt="Sidereus Nuncius title engraving"
+            className="h-9 w-12 rounded-lg object-cover border border-white/20"
           />
           <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-gold animate-pulse-soft" />
         </div>
