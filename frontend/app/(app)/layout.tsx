@@ -1,18 +1,13 @@
 // App shell layout — all authenticated pages live here.
 // The atmospheric background runs at a lower z-index so content floats above it.
-import dynamic from 'next/dynamic'
 import Navigation from '@/components/layout/Navigation'
-
-const AtmosphereBackground = dynamic(
-  () => import('@/components/atmosphere/AtmosphereBackground'),
-  { ssr: false }
-)
+import AtmosphereWrapper from '@/components/atmosphere/AtmosphereWrapper'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative flex h-screen overflow-hidden bg-void">
-      {/* Living atmospheric background */}
-      <AtmosphereBackground />
+      {/* Living atmospheric background (client component wrapper) */}
+      <AtmosphereWrapper />
 
       {/* Sidebar */}
       <aside className="relative z-10 w-56 flex-shrink-0 hidden md:block">

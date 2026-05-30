@@ -1,19 +1,14 @@
 // Marketing layout — landing, about, pricing
 // The atmospheric background is rendered here for the full-bleed experience.
-import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { TrendingUp, Zap } from 'lucide-react'
-
-const AtmosphereBackground = dynamic(
-  () => import('@/components/atmosphere/AtmosphereBackground'),
-  { ssr: false }
-)
+import AtmosphereWrapper from '@/components/atmosphere/AtmosphereWrapper'
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-screen bg-void overflow-x-hidden">
-      {/* Living atmospheric background */}
-      <AtmosphereBackground />
+      {/* Living atmospheric background (client component wrapper) */}
+      <AtmosphereWrapper />
 
       {/* Content layer sits above the atmosphere */}
       <div className="relative z-10">
