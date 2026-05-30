@@ -128,8 +128,7 @@ export default function DashboardClient() {
               <input
                 value={ticker}
                 onChange={(event) => setTicker(event.target.value)}
-                placeholder="NVDA, ASML, VRT, MRNA…"
-                className="min-h-12 flex-1 rounded-md bg-transparent px-3 text-lg font-medium tracking-tight text-fog placeholder:text-fog-dim/40 focus:outline-none focus:ring-2 focus:ring-lavender/40"
+                className="min-h-12 flex-1 rounded-md bg-transparent px-3 text-lg font-medium tracking-tight text-fog focus:outline-none focus:ring-2 focus:ring-lavender/40"
                 aria-label="Stock ticker"
                 autoFocus
               />
@@ -159,7 +158,7 @@ export default function DashboardClient() {
             {/* Quick-pick suggestions */}
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] uppercase tracking-[0.15em] text-fog-dim/60">Quick picks:</span>
-              {['NVDA', 'ASML', 'AVGO', 'VRT', 'MRNA', 'TSM'].map((t) => (
+              {['AXTI', 'AAO', 'ABVX', 'LITE', 'SNDK', 'RKLB'].map((t) => (
                 <button
                   key={t}
                   type="button"
