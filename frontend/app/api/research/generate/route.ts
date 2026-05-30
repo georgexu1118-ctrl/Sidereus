@@ -18,26 +18,16 @@ type ContextBundle = {
     filingExcerpt?: string
     filingUrl?: string
   }
+  arxiv: Array<{ title: string; summary: string; url: string }>
 }
 
+// New report structure — narrative-first, no valuation, no conclusion.
 const REPORT_SECTIONS = [
-  'Executive Summary',
-  'Investment Thesis',
-  'Industry Overview',
+  'Price / Share',
   'Company Overview',
-  'Competitive Positioning',
-  'Management Analysis',
-  'Financial Analysis',
-  'Valuation',
-  'Bull Case',
-  'Base Case',
-  'Bear Case',
-  'Catalysts',
-  'Risks',
-  'Variant Perception',
-  'Key Monitoring Indicators',
-  'Investment Conclusion',
-  'Appendix',
+  'Technology Masterclass',
+  'Supply Chain Analysis',
+  'Investment Analysis',
 ]
 
 const SEC_HEADERS = {
@@ -45,10 +35,13 @@ const SEC_HEADERS = {
   Accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
 }
 
+const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_FAST_MODEL || 'claude-3-5-sonnet-latest'
+const OPENAI_MINI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+
 function detectDomain(ticker: string, domain?: string) {
   if (domain) return domain
   const symbol = ticker.toUpperCase()
-  if (['NVDA', 'AMD', 'AVGO', 'ASML', 'ARM', 'LITE', 'COHR', 'AXTI', 'SNDK'].includes(symbol)) return 'AI Supply Chain'
+  if (['NVDA', 'AMD', 'AVGO', 'ASML', 'ARM', 'LITE', 'COHR', 'AXTI', 'SNDK', 'AAOI', 'MRVL', 'MU'].includes(symbol)) return 'AI Supply Chain'
   if (['VRT', 'SMCI', 'CRWV', 'EQIX', 'DLR', 'DELL', 'HPE'].includes(symbol)) return 'Data Center Ecosystem'
   if (['MRNA', 'REGN', 'VRTX', 'GILD', 'ALNY', 'ABVX', 'BNTX', 'BIIB'].includes(symbol)) return 'Biotechnology'
   return 'Frontier Technology'
@@ -77,6 +70,7 @@ function stripHtml(input: string) {
     .trim()
 }
 
+// ── Yahoo Finance: price / share ────────────────────────────────
 async function fetchYahooQuote(ticker: string) {
   try {
     const data = await fetchJson(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}`)
@@ -95,13 +89,61 @@ async function fetchYahooNews(ticker: string) {
   }
 }
 
-async function fetchSecContext(ticker: string): Promise<ContextBundle['sec']> {
+function fmtMoney(value: unknown): string {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n) || n === 0) return 'N/A'
+  if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
+  if (Math.abs(n) >= 1e9) return `$${(n / 1e9).toFixed(2)}B`
+  if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(2)}M`
+  return `$${n.toFixed(2)}`
+}
+
+function priceFactsMarkdown(quote: Record<string, unknown> | null): string {
+  if (!quote) return 'Live price data unavailable from Yahoo Finance at generation time.'
+  const price = quote.regularMarketPrice
+  const currency = (quote.currency as string) || 'USD'
+  const marketCap = quote.marketCap
+  // Enterprise value is not in the v7 quote endpoint; included only if present.
+  const ev = (quote as Record<string, unknown>).enterpriseValue
+  const change = quote.regularMarketChangePercent
+  const lines = [
+    `- Current share price: ${typeof price === 'number' ? `$${price.toFixed(2)} ${currency}` : 'N/A'}`,
+    typeof change === 'number' ? `- Day change: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '',
+    `- Market capitalization: ${fmtMoney(marketCap)}`,
+    `- Enterprise value: ${ev ? fmtMoney(ev) : 'not available from live feed'}`,
+    `- 52-week range: ${quote.fiftyTwoWeekLow ? `$${quote.fiftyTwoWeekLow}` : 'N/A'} – ${quote.fiftyTwoWeekHigh ? `$${quote.fiftyTwoWeekHigh}` : 'N/A'}`,
+  ].filter(Boolean)
+  return lines.join('\n')
+}
+
+// ── arXiv: ground the Technology Masterclass in research papers ──
+async function fetchArxiv(query: string): Promise<ContextBundle['arxiv']> {
+  if (!query.trim()) return []
+  try {
+    const url = `http://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=4&sortBy=relevance`
+    const xml = await fetchText(url)
+    const entries: ContextBundle['arxiv'] = []
+    const entryRe = /<entry>([\s\S]*?)<\/entry>/g
+    let m: RegExpExecArray | null
+    while ((m = entryRe.exec(xml)) !== null && entries.length < 4) {
+      const block = m[1]
+      const title = (block.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '').replace(/\s+/g, ' ').trim()
+      const summary = (block.match(/<summary>([\s\S]*?)<\/summary>/)?.[1] || '').replace(/\s+/g, ' ').trim().slice(0, 400)
+      const url2 = (block.match(/<id>([\s\S]*?)<\/id>/)?.[1] || '').trim()
+      if (title) entries.push({ title, summary, url: url2 })
+    }
+    return entries
+  } catch {
+    return []
+  }
+}
+
+async function fetchSecContext(ticker: string): Promise<Omit<ContextBundle['sec'], never>> {
   try {
     const tickers = await fetchJson('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS })
     const match = Object.values(tickers as Record<string, { ticker: string; cik_str: number; title: string }>).find(
       (entry) => entry.ticker?.toUpperCase() === ticker
     )
-
     if (!match) return { filings: [] }
 
     const cik = String(match.cik_str).padStart(10, '0')
@@ -115,10 +157,10 @@ async function fetchSecContext(ticker: string): Promise<ContextBundle['sec']> {
         accessionNumber: recent.accessionNumber[index],
         primaryDocument: recent.primaryDocument[index],
       }))
-      .filter((filing) => ['10-K', '10-Q', '8-K', '20-F', '6-K'].includes(String(filing.form)))
+      .filter((filing) => ['10-K', '10-Q', '8-K', '20-F', '6-K', 'S-1'].includes(String(filing.form)))
       .slice(0, 8)
 
-    const primary = filings.find((filing) => ['10-K', '10-Q', '20-F'].includes(String(filing.form))) || filings[0]
+    const primary = filings.find((filing) => ['10-K', '10-Q', '20-F', 'S-1'].includes(String(filing.form))) || filings[0]
     let filingExcerpt = ''
     let filingUrl = ''
 
@@ -127,266 +169,234 @@ async function fetchSecContext(ticker: string): Promise<ContextBundle['sec']> {
       const accession = String(primary.accessionNumber).replace(/-/g, '')
       filingUrl = `https://www.sec.gov/Archives/edgar/data/${cikNoLeading}/${accession}/${primary.primaryDocument}`
       const filingText = await fetchText(filingUrl, { headers: SEC_HEADERS })
-      filingExcerpt = stripHtml(filingText).slice(0, 18000)
+      filingExcerpt = stripHtml(filingText).slice(0, 22000)
     }
 
-    return {
-      cik,
-      companyName: match.title,
-      filings,
-      filingExcerpt,
-      filingUrl,
-    }
+    return { cik, companyName: match.title, filings, filingExcerpt, filingUrl }
   } catch {
     return { filings: [] }
   }
 }
 
-async function collectContext(ticker: string): Promise<ContextBundle> {
+async function collectContext(ticker: string, domain: string): Promise<ContextBundle> {
   const [quote, news, sec] = await Promise.all([
     fetchYahooQuote(ticker),
     fetchYahooNews(ticker),
     fetchSecContext(ticker),
   ])
-
-  return { quote, news, sec }
+  // arXiv query: company name + domain keywords (best-effort grounding).
+  const arxiv = await fetchArxiv(`${sec.companyName || ticker} ${domain.replace('Ecosystem', '').trim()}`)
+  return { quote, news, sec, arxiv }
 }
 
 function contextToMarkdown(context: ContextBundle) {
   return [
-    '## Market Quote Snapshot',
-    JSON.stringify(context.quote, null, 2),
+    '## Live Price (Yahoo Finance)',
+    priceFactsMarkdown(context.quote),
     '',
     '## Recent News Headlines',
     JSON.stringify(context.news, null, 2),
     '',
-    '## SEC Filing Metadata',
+    '## SEC Filing Index',
     JSON.stringify(context.sec.filings, null, 2),
     '',
     context.sec.filingUrl ? `Primary filing URL: ${context.sec.filingUrl}` : '',
     '',
-    '## SEC Filing Excerpt',
+    '## SEC Filing Excerpt (primary document)',
     context.sec.filingExcerpt || 'No filing excerpt available.',
+    '',
+    '## Relevant Research Papers (arXiv)',
+    context.arxiv.length
+      ? context.arxiv.map((p) => `- ${p.title} (${p.url})\n  ${p.summary}`).join('\n')
+      : 'No arXiv papers retrieved.',
   ].join('\n')
 }
 
-function fallbackReport(ticker: string, domain: string) {
-  return `# ${ticker} Institutional Equity Research
+// ════════════════════════════════════════════════════════════════
+// MODEL PIPELINE PROMPTS
+// ════════════════════════════════════════════════════════════════
 
-## Executive Summary
-Sidereus is configured for 5-8 page institutional research, but no live LLM provider is available in the server environment yet.
+// STEP 1 — Claude Sonnet: read filings, extract facts.
+function buildClaudeExtractionPrompt(ticker: string, domain: string, contextMarkdown: string) {
+  return `You are the lead analyst at Sidereus. Read the SEC filings and public context below for ${ticker} (${domain}) and extract a dense, factual evidence pack. Do not write prose for an article yet — extract facts.
 
-## Research Standard
-The production path collects public market data, recent news, and SEC filing evidence; uses OpenAI gpt-4o-mini for extraction; then uses Claude Sonnet for thesis generation, skeptical analysis, and final report synthesis.
+Extract, with the source form/date where possible:
+1. What the company does, core products, business model, key customers, industry positioning.
+2. Technology and engineering details: how the products actually work, the underlying physics/process, manufacturing process steps, performance specifications, the technical moat.
+3. Supply chain relationships: named suppliers, manufacturing partners, distribution channels, named end customers, dependencies, bottlenecks.
+4. Industry dynamics, competitive landscape, supply-demand trends, technology roadmap, customer adoption signals.
+5. Catalysts, risks, anything consensus may be missing, and the factors to monitor — as raw facts (these will be woven into a narrative later, not listed).
+6. Cross-reference statements across filings and news; flag confirmed vs. inferred.
 
-## Domain
-${domain}
+Then, on a final line, output exactly:
+ARXIV_QUERY: <3-6 technical keywords describing this company's core technology for a research-paper search>
 
-## Required Next Step
-Set ANTHROPIC_API_KEY and OPENAI_API_KEY as server-side Vercel environment variables, then redeploy. Do not expose keys with NEXT_PUBLIC prefixes.`
-}
-
-function buildExtractionPrompt(ticker: string, domain: string, contextMarkdown: string) {
-  return `You are the OpenAI extraction layer for Sidereus. Extract evidence for an institutional equity research report.
-
-Ticker: ${ticker}
-Domain: ${domain}
-
-Use the public context below. Do not invent facts. If a claim is not supported, mark it as "needs verification".
-
-Return markdown with these sections:
-1. Filing evidence bullets with source form/date.
-2. Earnings and management signals inferred from filings/news.
-3. Supply chain / customer / supplier / competitor map where inferable.
-4. Financial and valuation inputs available from quote data.
-5. Risks and red flags.
-6. Evidence gaps the final analyst must not overclaim.
-
-Context:
+Public context:
 ${contextMarkdown}`
 }
 
-function buildFinalPrompt(ticker: string, domain: string, contextMarkdown: string, evidenceMarkdown: string) {
-  const isSupplyChainDomain = ['AI Supply Chain', 'Semiconductor Infrastructure', 'Data Center Ecosystem', 'Frontier Technology'].includes(domain)
+// STEP 2 — GPT-4o Mini: turn facts into diagrams, flowcharts, explainers, tables.
+function buildVisualsPrompt(ticker: string, domain: string, factsMarkdown: string) {
+  return `You are the technical illustration and diagram layer of Sidereus. Using the extracted facts below for ${ticker}, produce a VISUAL ASSET PACK in markdown. Be technically accurate and educational (university-lecture clarity for non-experts).
 
-  const flowchartBlock = isSupplyChainDomain
-    ? `
+Produce these assets, each clearly labelled:
 
-CRITICAL: SUPPLY CHAIN FLOWCHART (required for ${ticker}):
+A) TECHNOLOGY DIAGRAMS — 2 to 3 Mermaid diagrams that explain how the core technology works:
+   - An engineering / system-architecture diagram (flowchart LR or TB)
+   - A manufacturing-process diagram (flowchart showing process steps)
+   Use this fence format exactly:
+   \`\`\`mermaid
+   flowchart LR
+       A[Component<br/>detail] --> B[Next stage<br/>detail]
+   \`\`\`
+   Keep node labels short, use <br/> for line breaks, label edges with the real interface/material.
 
-You MUST include a Mermaid flowchart (LR layout) titled exactly:
-"## AI Supply Chain Position — ${ticker}"
+B) SUPPLY CHAIN FLOWCHART — one end-to-end Mermaid flowchart (flowchart TB or LR) of the form:
+   Raw Materials -> Substrates -> Foundry -> Packaging -> System Integrators -> Cloud Providers -> End Users
+   but specialised to ${ticker}'s actual chain, with named real companies at each node where known.
+   Highlight ${ticker}'s own node. Use classDef to color ${ticker} differently.
 
-The flowchart must visualize ${ticker}'s position in the AI supply chain showing:
-- Upstream suppliers / equipment / materials (with tickers)
-- ${ticker} itself, visually highlighted as the focal node
-- Downstream customers / hyperscalers (with tickers)
-- Edge labels for the relationship (e.g. "EUV machines", "HBM3E memory", "GPU compute", "CoWoS-L packaging")
+C) TECHNOLOGY EXPLAINERS — 2 short plain-language explainers (3-5 sentences each) of the hardest technical concepts, written so a generalist investor understands them.
 
-Use this exact Mermaid syntax (wrap in a code fence with language "mermaid"):
+D) TABLES — 1-2 GitHub-flavored markdown tables summarizing structured data (e.g. product specs, supply-chain nodes with economics/key players, or competitive comparison).
 
-\`\`\`mermaid
-flowchart LR
-    classDef focal fill:#E0B96A,stroke:#E0B96A,stroke-width:2px,color:#0B0E13;
-    classDef upstream fill:#1A2230,stroke:#B5A6D8,color:#F4F4F2;
-    classDef midstream fill:#1A2230,stroke:#8FA9D8,color:#F4F4F2;
-    classDef customer fill:#1A2230,stroke:#6AA87A,color:#F4F4F2;
+Rules:
+- Mermaid code must be valid (no parentheses inside node text; use <br/> not \\n).
+- Do not invent specific financial numbers.
+- Output only the asset pack. The diagrams will be embedded verbatim into the final article.
 
-    %% Example structure — REPLACE with ${ticker}-specific nodes/edges
-    ASML[ASML<br/>EUV Lithography] --> TSM[TSMC<br/>Foundry]
-    AMAT[AMAT<br/>Deposition] --> TSM
-    MU[Micron<br/>HBM3E Memory] --> NVDA
-    TSM --> NVDA[${ticker}<br/>${ticker} role]
-    NVDA --> MSFT[Microsoft<br/>Azure AI]
-    NVDA --> GOOGL[Google<br/>Cloud AI]
-    NVDA --> AMZN[AWS<br/>Cloud AI]
-
-    class NVDA focal
-    class ASML,AMAT,MU upstream
-    class TSM midstream
-    class MSFT,GOOGL,AMZN customer
-\`\`\`
-
-Rules for the flowchart:
-1. Replace the example NVDA placeholder with ${ticker} as the focal node.
-2. Include AT LEAST 4 upstream and 4 downstream nodes specific to ${ticker}.
-3. Edge labels must name the actual product/technology being supplied
-   (e.g. "EUV machines", "HBM3E stacks", "CoWoS-L packaging", "GPU compute",
-   "InfiniBand optics", "Liquid cooling", "Custom ASIC silicon").
-4. Use node line breaks with <br/> to keep labels readable.
-5. Apply classes: focal for ${ticker}, upstream for equipment/material, midstream
-   for foundry/packaging, customer for hyperscaler/end customer.
-6. Place the flowchart in a section called "## AI Supply Chain Position — ${ticker}"
-   immediately AFTER the Investment Thesis section.
-7. Below the flowchart, write 2-3 sentences explaining ${ticker}'s chokepoint
-   position, the most critical dependency, and the most underappreciated
-   second-order beneficiary.
-
-Do NOT skip the flowchart. It is REQUIRED for this domain.`
-    : ''
-
-  return `You are the Chief Architect and lead analyst of Sidereus, a world-class institutional equity research platform.
-
-Mission: produce a differentiated, evidence-backed, hedge-fund-quality and sell-side-quality research report.
-
-Ticker: ${ticker}
-Domain: ${domain}
-Default length: 5-8 pages. Write roughly 3,500-5,500 words in markdown. Do not be brief.
-
-Core rule:
-The objective is not information retrieval. The objective is differentiated investment insight.
-
-Use the public evidence packet and context below. Anchor claims to filings, market data, or news where available. If evidence is incomplete, state the limitation instead of hallucinating. Give a price target at the end.
-
-Required sections:
-${REPORT_SECTIONS.map((section) => `- ${section}`).join('\n')}
-
-Analytical requirements:
-- Executive Summary must include rating stance, key controversy, and price target.
-- Investment Thesis must be variant-perception driven.
-- Valuation must include bull/base/bear framework, key assumptions, and expected return vs current price when current price is available.
-- Skeptical Analyst Engine must attack the thesis and identify invalidation triggers.
-- Risks must separate thesis-breaking risks from ordinary volatility.
-- For AI supply chain / semiconductors / data center companies, map customers, suppliers, competitors, revenue exposure, product dependencies, manufacturing dependencies, geographic risks, and second-order beneficiaries.
-- For biotechnology companies, analyze mechanism, trial design, endpoints, regulatory pathway, probability of success, TAM, pipeline economics, DCF/rNPV framing, and standard of care.
-- Appendix must include an evidence log and "items requiring further diligence".
-${flowchartBlock}
-
-OpenAI evidence extraction:
-${evidenceMarkdown}
-
-Raw public context:
-${contextMarkdown}
-
-Return only markdown.`
+Extracted facts:
+${factsMarkdown}`
 }
 
-async function callOpenAIExtraction(ticker: string, domain: string, contextMarkdown: string) {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OpenAI
-  if (!apiKey) return ''
+// STEP 3 — Claude Sonnet: write the final institutional article.
+function buildFinalPrompt(
+  ticker: string,
+  domain: string,
+  priceFacts: string,
+  factsMarkdown: string,
+  visualsMarkdown: string,
+  arxiv: ContextBundle['arxiv'],
+) {
+  const arxivBlock = arxiv.length
+    ? arxiv.map((p) => `- ${p.title} — ${p.url}`).join('\n')
+    : 'No specific papers retrieved; ground technology claims in established engineering principles.'
 
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.1,
-      max_tokens: 3500,
-      messages: [
-        { role: 'system', content: 'You extract evidence for institutional equity research. Return only markdown.' },
-        { role: 'user', content: buildExtractionPrompt(ticker, domain, contextMarkdown) },
-      ],
-    }),
-  })
+  return `You are the lead analyst at Sidereus writing the final institutional research article on ${ticker} (${domain}).
 
-  if (!res.ok) return ''
-  const data = await res.json()
-  return data?.choices?.[0]?.message?.content?.trim() || ''
+Write in the voice of elite independent buy-side research (Citrini Research, Aleabitoreddit's OSINT supply-chain deep dives, SemiconSam's semiconductor depth): analytical, evidence-driven, thesis-oriented, industry-focused. No marketing language. No bullet-point dumping in the investment section.
+
+FORMATTING (critical):
+- Each section title is a level-2 markdown heading: "## Title". The app renders these as bold subtitles.
+- Subsection labels inside a section may use a short bold lead-in. Do NOT pepper prose with ** or stray symbols.
+- Embed the provided Mermaid diagrams VERBATIM (copy the \`\`\`mermaid ... \`\`\` blocks exactly) into the relevant sections. Do not modify the mermaid code.
+
+WRITE EXACTLY THESE SECTIONS, IN ORDER:
+
+## Price / Share
+Report the live figures below as a short factual paragraph (current share price, market capitalization, and enterprise value if available). Nothing else — no valuation commentary.
+${priceFacts}
+
+## Company Overview
+What the company does, core products, business model, key customers, and industry positioning. Tight and concrete.
+
+## Technology Masterclass
+Explain the technology from first principles, like a university lecture. Embed the engineering/system-architecture and manufacturing-process Mermaid diagrams from the visual pack here. Use the technology explainers and tables. Ground claims in engineering principles and, where relevant, the research literature below. Make a generalist genuinely understand how it works.
+
+## Supply Chain Analysis
+Embed the end-to-end supply-chain Mermaid flowchart from the visual pack. Walk the chain node by node (upstream suppliers, manufacturing partners, distribution, end customers, dependencies, bottlenecks). For each node explain the economics, the competitive landscape, the key players, and the strategic importance. Use the supply-chain table if provided.
+
+## Investment Analysis
+Write as ONE flowing institutional article — NOT a list. Do NOT use separate headings or labels for catalysts, risks, variant perception, or monitoring factors. Integrate all of them naturally into the prose: competitive positioning, industry dynamics, supply-demand trends, technology roadmap, customer adoption, strategic advantages, emerging risks, the variant perception (where you differ from consensus and why), and what to monitor going forward. Evidence-driven and thesis-oriented throughout.
+
+HARD CONSTRAINTS:
+- NO financial modeling: do not discuss valuation, price targets, DCF, multiples, margins, or financial forecasts anywhere.
+- NO conclusion / summary section. End naturally after the Investment Analysis.
+- Target length: a substantial deep-dive (roughly 2,500-4,500 words). Do not be brief.
+
+Research papers for grounding the technology section:
+${arxivBlock}
+
+Extracted facts (from the filings):
+${factsMarkdown}
+
+Visual asset pack (embed the mermaid diagrams verbatim, use the explainers/tables):
+${visualsMarkdown}
+
+Return only the article in markdown.`
 }
 
-async function callAnthropicFinal(ticker: string, domain: string, contextMarkdown: string, evidenceMarkdown: string) {
+function fallbackReport(ticker: string, domain: string, priceFacts: string) {
+  return `## Price / Share
+${priceFacts}
+
+## Company Overview
+Sidereus is configured for a multi-model deep dive on ${ticker} (${domain}), but no live LLM provider is available in this environment yet.
+
+## Technology Masterclass
+The production pipeline uses Claude Sonnet to read SEC filings (10-K, 10-Q, S-1, 8-K) and extract technology, manufacturing, and supply-chain facts; GPT-4o-mini to render Mermaid diagrams, technology explainers, and tables; then Claude Sonnet to write this institutional article.
+
+## Supply Chain Analysis
+Set server-side ANTHROPIC_API_KEY and OPENAI_API_KEY in Vercel environment variables to enable live generation.
+
+## Investment Analysis
+Once keys are configured, this section becomes a flowing institutional narrative integrating competitive positioning, industry dynamics, technology roadmap, emerging risks, variant perception, and monitoring factors — with no valuation and no conclusion.`
+}
+
+// ── LLM callers ─────────────────────────────────────────────────
+async function callAnthropic(prompt: string, maxTokens: number): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.Claude
   if (!apiKey) return null
-
-  const model = process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_FAST_MODEL || 'claude-3-5-sonnet-latest'
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 8192,
-      temperature: 0.35,
-      messages: [{ role: 'user', content: buildFinalPrompt(ticker, domain, contextMarkdown, evidenceMarkdown) }],
-    }),
-  })
-
-  if (!res.ok) return null
-  const data = await res.json()
-  const text = data?.content?.map((part: { text?: string }) => part.text || '').join('\n').trim()
-  return text || null
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: maxTokens,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.content?.map((part: { text?: string }) => part.text || '').join('\n').trim() || null
+  } catch {
+    return null
+  }
 }
 
-async function callOpenAIFinal(ticker: string, domain: string, contextMarkdown: string, evidenceMarkdown: string) {
+async function callOpenAI(prompt: string, system: string, maxTokens: number): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OpenAI
   if (!apiKey) return null
-
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.25,
-      max_tokens: 10000,
-      messages: [
-        { role: 'system', content: 'You are an institutional equity research analyst. Return only markdown.' },
-        { role: 'user', content: buildFinalPrompt(ticker, domain, contextMarkdown, evidenceMarkdown) },
-      ],
-    }),
-  })
-
-  if (!res.ok) return null
-  const data = await res.json()
-  return data?.choices?.[0]?.message?.content?.trim() || null
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: OPENAI_MINI_MODEL,
+        temperature: 0.2,
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: prompt },
+        ],
+      }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.choices?.[0]?.message?.content?.trim() || null
+  } catch {
+    return null
+  }
 }
 
-function normalizeBackendResponse(data: Record<string, unknown>, ticker: string, domain: string) {
+function normalizeBackendResponse(data: Record<string, unknown>, ticker: string, domain: string, priceFacts: string) {
   const reportMarkdown =
     typeof data.reportMarkdown === 'string' ? data.reportMarkdown :
     typeof data.report === 'string' ? data.report :
     typeof data.markdown === 'string' ? data.markdown :
-    fallbackReport(ticker, domain)
+    fallbackReport(ticker, domain, priceFacts)
 
   return {
     status: 'ready',
@@ -404,50 +414,90 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as GenerateBody
     const ticker = body.ticker?.trim().toUpperCase().replace(/[^A-Z0-9.-]/g, '')
-
-    if (!ticker) {
-      return NextResponse.json({ error: 'ticker is required' }, { status: 400 })
-    }
+    if (!ticker) return NextResponse.json({ error: 'ticker is required' }, { status: 400 })
 
     const domain = detectDomain(ticker, body.domain)
     const backendUrl = process.env.BACKEND_API_URL
     const backendSecret = process.env.BACKEND_API_SECRET
 
+    // Collect context up-front so we always have price facts.
+    const context = await collectContext(ticker, domain)
+    const priceFacts = priceFactsMarkdown(context.quote)
+    const contextMarkdown = contextToMarkdown(context)
+    const companyName = context.sec.companyName || String(context.quote?.longName || context.quote?.shortName || ticker)
+
+    // Optional Python backend proxy.
     if (backendUrl) {
       const upstream = await fetch(`${backendUrl}/api/research/generate`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(backendSecret ? { 'X-Internal-Secret': backendSecret } : {}),
-        },
-        body: JSON.stringify({ ticker, domain, fast: !!body.fast, targetLength: '5-8 pages' }),
+        headers: { 'Content-Type': 'application/json', ...(backendSecret ? { 'X-Internal-Secret': backendSecret } : {}) },
+        body: JSON.stringify({ ticker, domain, fast: !!body.fast }),
       })
-
       if (!upstream.ok) {
         const err = await upstream.text()
         return NextResponse.json({ error: err }, { status: upstream.status })
       }
-
       const data = await upstream.json()
-      return NextResponse.json(normalizeBackendResponse(data, ticker, domain))
+      return NextResponse.json(normalizeBackendResponse(data, ticker, domain, priceFacts))
     }
 
-    const context = await collectContext(ticker)
-    const contextMarkdown = contextToMarkdown(context)
-    const evidenceMarkdown = await callOpenAIExtraction(ticker, domain, contextMarkdown)
-    const finalReport =
-      await callAnthropicFinal(ticker, domain, contextMarkdown, evidenceMarkdown) ||
-      await callOpenAIFinal(ticker, domain, contextMarkdown, evidenceMarkdown)
+    // ── STEP 1: Claude Sonnet reads filings and extracts facts ────
+    let factsMarkdown = await callAnthropic(buildClaudeExtractionPrompt(ticker, domain, contextMarkdown), 4096)
+    // Fallback: GPT-4o-mini extraction if Claude unavailable.
+    if (!factsMarkdown) {
+      factsMarkdown = await callOpenAI(
+        buildClaudeExtractionPrompt(ticker, domain, contextMarkdown),
+        'You extract factual evidence for institutional equity research. Return only markdown.',
+        3500,
+      )
+    }
+
+    // Pull an arXiv query Claude suggested, refine the paper grounding.
+    if (factsMarkdown) {
+      const q = factsMarkdown.match(/ARXIV_QUERY:\s*(.+)/i)?.[1]?.trim()
+      if (q) {
+        const refined = await fetchArxiv(q)
+        if (refined.length) context.arxiv = refined
+      }
+    }
+
+    const facts = factsMarkdown || contextMarkdown
+
+    // ── STEP 2: GPT-4o-mini builds diagrams, flowcharts, tables ───
+    let visualsMarkdown = await callOpenAI(
+      buildVisualsPrompt(ticker, domain, facts),
+      'You produce technically accurate Mermaid diagrams, educational explainers, and markdown tables. Return only the asset pack.',
+      3500,
+    )
+    // Fallback: Claude builds visuals if OpenAI unavailable.
+    if (!visualsMarkdown) {
+      visualsMarkdown = await callAnthropic(buildVisualsPrompt(ticker, domain, facts), 3000)
+    }
+    const visuals = visualsMarkdown || 'No diagram pack available — describe the technology and supply chain in prose with clear structure.'
+
+    // ── STEP 3: Claude Sonnet writes the final article ────────────
+    let finalReport = await callAnthropic(
+      buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv),
+      8192,
+    )
+    // Fallback: GPT-4o-mini writes the final article.
+    if (!finalReport) {
+      finalReport = await callOpenAI(
+        buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv),
+        'You are an institutional equity research analyst. Return only the article in markdown.',
+        10000,
+      )
+    }
 
     if (finalReport) {
       return NextResponse.json({
         status: 'ready',
         ticker,
         domain,
-        companyName: context.sec.companyName || String(context.quote?.longName || context.quote?.shortName || ticker),
+        companyName,
         reportMarkdown: finalReport,
         sections: REPORT_SECTIONS,
-        provider: evidenceMarkdown ? 'openai-extraction-anthropic-final' : 'llm-final',
+        provider: 'claude-extract+gpt4omini-visuals+claude-narrative',
         generatedAt: new Date().toISOString(),
       })
     }
@@ -456,12 +506,12 @@ export async function POST(req: NextRequest) {
       status: 'demo',
       ticker,
       domain,
-      companyName: context.sec.companyName || ticker,
-      reportMarkdown: fallbackReport(ticker, domain),
+      companyName,
+      reportMarkdown: fallbackReport(ticker, domain, priceFacts),
       sections: REPORT_SECTIONS,
       provider: 'demo',
       generatedAt: new Date().toISOString(),
-      message: 'Set server-side ANTHROPIC_API_KEY and OPENAI_API_KEY to enable 5-8 page live research generation.',
+      message: 'Set server-side ANTHROPIC_API_KEY and OPENAI_API_KEY to enable the multi-model research pipeline.',
     })
   } catch (err) {
     console.error('[research/generate]', err)

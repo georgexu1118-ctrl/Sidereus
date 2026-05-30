@@ -17,15 +17,13 @@ type ReportPayload = {
 }
 
 const AGENT_STEPS = [
-  'Market data',
+  'Yahoo price',
   'SEC filings',
-  'Earnings calls',
-  'Industry map',
-  'Financial model',
-  'Valuation',
-  'Risk review',
-  'Skeptical analyst',
-  'Final report',
+  'Claude extraction',
+  'arXiv papers',
+  'GPT-4o diagrams',
+  'Supply chain map',
+  'Claude narrative',
   'PDF',
 ]
 
@@ -47,7 +45,7 @@ export default function DashboardClient() {
     [ticker]
   )
 
-  const activeStepCount = report ? AGENT_STEPS.length : isGenerating ? 8 : 0
+  const activeStepCount = report ? AGENT_STEPS.length : isGenerating ? 6 : 0
 
   async function generatePdf(nextReport: ReportPayload) {
     const res = await fetch('/api/research/pdf', {
@@ -158,7 +156,7 @@ export default function DashboardClient() {
             {/* Quick-pick suggestions */}
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] uppercase tracking-[0.15em] text-fog-dim/60">Quick picks:</span>
-              {['AXTI', 'AAO', 'ABVX', 'LITE', 'SNDK', 'RKLB'].map((t) => (
+              {['AXTI', 'AAOI', 'ABVX', 'LITE', 'SNDK', 'RKLB'].map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -182,7 +180,7 @@ export default function DashboardClient() {
             <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
               {!isGenerating && !report && !error && (
                 <div className="max-w-2xl rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-sm leading-6 text-fog-dim">
-                  Sidereus generates a 5-8 page report: investment thesis, AI supply chain flowchart (rendered visually), financial analysis, valuation, bear/base/bull cases, catalysts, risks, skeptical review, and a price target.
+                  Sidereus runs a multi-model pipeline — Claude Sonnet reads the SEC filings, GPT-4o-mini renders the diagrams and supply-chain flowchart, then Claude Sonnet writes the article: company overview, a first-principles technology masterclass, an end-to-end supply chain analysis, and a flowing investment narrative. No valuation, no price targets.
                 </div>
               )}
 
@@ -245,10 +243,10 @@ export default function DashboardClient() {
           <aside className="border-t border-white/[0.06] p-5 lg:border-l lg:border-t-0">
             <p className="text-xs font-medium uppercase tracking-[0.16em] text-fog-dim">Output</p>
             <div className="mt-4 space-y-3 text-sm text-fog-dim">
-              <div className="rounded-md border border-white/[0.07] p-3">Institutional report</div>
-              <div className="rounded-md border border-white/[0.07] p-3">AI supply chain flowchart</div>
-              <div className="rounded-md border border-white/[0.07] p-3">Skeptical analyst review</div>
-              <div className="rounded-md border border-white/[0.07] p-3">Price target framework</div>
+              <div className="rounded-md border border-white/[0.07] p-3">Company overview</div>
+              <div className="rounded-md border border-white/[0.07] p-3">Technology masterclass</div>
+              <div className="rounded-md border border-white/[0.07] p-3">Supply chain flowchart</div>
+              <div className="rounded-md border border-white/[0.07] p-3">Diagrams &amp; tables</div>
               <div className="rounded-md border border-white/[0.07] p-3">Automatic PDF</div>
             </div>
           </aside>
