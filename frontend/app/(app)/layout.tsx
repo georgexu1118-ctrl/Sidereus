@@ -1,31 +1,31 @@
-// App shell layout — all authenticated pages live here.
-// The atmospheric background runs at a lower z-index so content floats above it.
-import Navigation from '@/components/layout/Navigation'
+import Link from 'next/link'
 import AtmosphereWrapper from '@/components/atmosphere/AtmosphereWrapper'
+
+const APP_LOGO = '/sidereus-nuncius-logo.jpg'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative flex h-screen overflow-hidden bg-void">
-      {/* Living atmospheric background (client component wrapper) */}
+    <div className="relative min-h-screen overflow-hidden bg-void">
       <AtmosphereWrapper />
-
-      {/* Sidebar */}
-      <aside className="relative z-10 w-56 flex-shrink-0 hidden md:block">
-        <Navigation />
-      </aside>
-
-      {/* Main content */}
-      <main className="relative z-10 flex-1 overflow-y-auto">
-        {/* Subtle gradient overlay to separate from sidebar */}
-        <div
-          className="pointer-events-none fixed inset-0 z-0"
-          style={{
-            background:
-              'radial-gradient(ellipse 60% 40% at 70% 30%, rgba(94,111,163,0.04) 0%, transparent 70%)',
-          }}
-        />
-        <div className="relative z-10 min-h-full">{children}</div>
-      </main>
+      <header className="relative z-10 border-b border-white/[0.06] bg-void/75 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+          <Link href="/" className="flex items-center gap-3">
+            <img
+              src={APP_LOGO}
+              alt="Sidereus Nuncius title engraving"
+              className="h-9 w-12 rounded-md border border-white/15 object-cover"
+            />
+            <span className="text-base font-semibold tracking-normal text-fog">Sidereus</span>
+          </Link>
+          <Link
+            href="/dashboard"
+            className="rounded-md border border-white/10 px-3 py-1.5 text-xs font-medium text-fog-dim transition hover:text-fog"
+          >
+            Research
+          </Link>
+        </div>
+      </header>
+      <main className="relative z-10 min-h-[calc(100vh-4rem)]">{children}</main>
     </div>
   )
 }

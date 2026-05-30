@@ -1,312 +1,226 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
-import { Search, Plus, TrendingUp, TrendingDown, Zap, FileText, Activity } from 'lucide-react'
-import GlassCard from '@/components/glass/GlassCard'
-import MetricCard from '@/components/glass/MetricCard'
-import { formatPrice, formatPct, formatMarketCap, getChangeColor, getDomainBadgeClass } from '@/lib/utils'
-import { MOCK_TICKERS } from '@/lib/constants'
-import Link from 'next/link'
+import { FormEvent, useMemo, useState } from 'react'
+import { Download, FileText, Loader2, Send, ShieldCheck } from 'lucide-react'
 
-const COVERAGE_TICKERS = [
-  { ticker: 'SNDK', domain: 'Semiconductors' },
-  { ticker: 'LITE', domain: 'AI Supply Chain' },
-  { ticker: 'ARM', domain: 'Semiconductors' },
-  { ticker: 'CRWV', domain: 'Data Center' },
-  { ticker: 'ABVX', domain: 'Biotechnology' },
-  { ticker: 'AXTI', domain: 'AI Supply Chain' },
-] as const
-
-type SnapshotRow = {
+type ReportPayload = {
   ticker: string
-  price: number
-  change: number
-  domain: string
-  cap: number
+  companyName?: string
+  domain?: string
+  status: 'ready' | 'demo' | 'error'
+  reportMarkdown: string
+  sections?: string[]
+  provider?: string
+  generatedAt?: string
+  message?: string
 }
 
-type QuoteApiResponse = {
-  quotes?: Array<{
-    ticker: string
-    price: number | null
-    change: number | null
-    cap: number | null
-  }>
-}
-
-const MARKET_SNAPSHOT_FALLBACK: SnapshotRow[] = COVERAGE_TICKERS.map((row) => ({
-  ticker: row.ticker,
-  domain: row.domain,
-  price: 0,
-  change: 0,
-  cap: 0,
-}))
-
-const RECENT_REPORTS = [
-  { ticker: 'NVDA', name: 'NVIDIA Corporation', rating: 'BUY', target: 1400, date: '2026-05-28', domain: 'AI Supply Chain' },
-  { ticker: 'ASML', name: 'ASML Holding', rating: 'BUY', target: 1100, date: '2026-05-25', domain: 'Semiconductors' },
-  { ticker: 'VRT', name: 'Vertiv Holdings', rating: 'OUTPERFORM', target: 145, date: '2026-05-21', domain: 'Data Center' },
-  { ticker: 'MRNA', name: 'Moderna Inc.', rating: 'HOLD', target: 72, date: '2026-05-18', domain: 'Biotechnology' },
+const AGENT_STEPS = [
+  'Market data',
+  'SEC filings',
+  'Earnings calls',
+  'Industry map',
+  'Financial model',
+  'Valuation',
+  'Risk review',
+  'Skeptical analyst',
+  'Final report',
+  'PDF',
 ]
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.06, delayChildren: 0.1 },
-  },
-}
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
-}
-
-function ResearchTicker({ item }: { item: SnapshotRow }) {
-  const up = item.change >= 0
-  return (
-    <Link href={`/research/${item.ticker}`}>
-      <motion.div
-        className="glass-card rounded-xl p-4 cursor-pointer group"
-        whileHover={{ y: -3, transition: { duration: 0.2 } }}
-      >
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <p className="font-bold text-fog text-base">{item.ticker}</p>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getDomainBadgeClass(item.domain)} border`}>
-              {item.domain}
-            </span>
-          </div>
-          <div className="text-right">
-            <p className="text-base font-semibold mono-nums text-fog">{item.price > 0 ? formatPrice(item.price) : 'N/A'}</p>
-            <div className={`flex items-center gap-1 justify-end ${getChangeColor(item.change)}`}>
-              {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              <span className="text-xs mono-nums font-medium">{formatPct(item.change)}</span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] text-fog-dim">Mkt Cap</span>
-          <span className="text-[11px] mono-nums text-fog-dim">{item.cap > 0 ? formatMarketCap(item.cap) : 'N/A'}</span>
-        </div>
-      </motion.div>
-    </Link>
-  )
-}
-
-function ReportRow({ report, livePrice }: { report: typeof RECENT_REPORTS[0], livePrice?: number }) {
-  const upside = ((report.target / (livePrice || report.target)) - 1) * 100
-  const ratingColor = report.rating === 'BUY' || report.rating === 'OUTPERFORM' ? 'text-bull' : report.rating === 'SELL' ? 'text-bear' : 'text-neutral'
-  return (
-    <Link href={`/research/${report.ticker}`}>
-      <motion.div
-        className="flex items-center gap-4 px-4 py-3.5 rounded-lg hover:bg-white/[0.03] transition-colors duration-150 cursor-pointer group"
-        whileHover={{ x: 2, transition: { duration: 0.15 } }}
-      >
-        <div className="w-9 h-9 rounded-lg glass flex items-center justify-center flex-shrink-0">
-          <span className="text-[11px] font-bold text-fog-dim">{report.ticker.slice(0, 2)}</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-fog truncate">{report.name}</p>
-          <p className="text-xs text-fog-dim">{report.date}</p>
-        </div>
-        <div className="flex items-center gap-4 flex-shrink-0">
-          <span className={`text-xs font-semibold ${ratingColor}`}>{report.rating}</span>
-          <span className="text-xs mono-nums text-fog-dim hidden sm:block">{formatPrice(report.target)}</span>
-          <span className={`text-xs mono-nums hidden md:block ${upside > 0 ? 'text-bull' : 'text-bear'}`}>
-            {formatPct(upside)}
-          </span>
-        </div>
-      </motion.div>
-    </Link>
-  )
+function extractTitle(markdown: string, ticker: string) {
+  const firstHeading = markdown.split('\n').find((line) => line.startsWith('# '))
+  return firstHeading?.replace(/^#\s+/, '') || `${ticker} Research Report`
 }
 
 export default function DashboardClient() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [marketSnapshot, setMarketSnapshot] = useState<SnapshotRow[]>(MARKET_SNAPSHOT_FALLBACK)
+  const [ticker, setTicker] = useState('')
+  const [domain, setDomain] = useState('')
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [report, setReport] = useState<ReportPayload | null>(null)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-
-    const loadQuotes = async () => {
-      try {
-        const symbols = COVERAGE_TICKERS.map((item) => item.ticker).join(',')
-        const res = await fetch(`/api/market/quotes?tickers=${symbols}`, { cache: 'no-store' })
-        if (!res.ok) return
-
-        const payload = await res.json() as QuoteApiResponse
-        const quoteMap = new Map((payload.quotes ?? []).map((q) => [q.ticker.toUpperCase(), q]))
-        const nextRows = COVERAGE_TICKERS.map((item) => {
-          const quote = quoteMap.get(item.ticker)
-          return {
-            ticker: item.ticker,
-            domain: item.domain,
-            price: quote?.price ?? 0,
-            change: quote?.change ?? 0,
-            cap: quote?.cap ?? 0,
-          }
-        })
-        if (!cancelled) setMarketSnapshot(nextRows)
-      } catch {
-        // Keep existing values if quote fetch fails.
-      }
-    }
-
-    void loadQuotes()
-    const intervalId = setInterval(loadQuotes, 15000)
-    return () => {
-      cancelled = true
-      clearInterval(intervalId)
-    }
-  }, [])
-
-  const marketByTicker = useMemo(
-    () => new Map(marketSnapshot.map((item) => [item.ticker, item])),
-    [marketSnapshot]
+  const normalizedTicker = useMemo(
+    () => ticker.trim().toUpperCase().replace(/[^A-Z0-9.-]/g, ''),
+    [ticker]
   )
 
+  const activeStepCount = report ? AGENT_STEPS.length : isGenerating ? 8 : 0
+
+  async function generatePdf(nextReport: ReportPayload) {
+    const res = await fetch('/api/research/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ticker: nextReport.ticker,
+        title: extractTitle(nextReport.reportMarkdown, nextReport.ticker),
+        markdown: nextReport.reportMarkdown,
+      }),
+    })
+
+    if (!res.ok) return
+    const blob = await res.blob()
+    setPdfUrl(URL.createObjectURL(blob))
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!normalizedTicker || isGenerating) return
+
+    setIsGenerating(true)
+    setError(null)
+    setReport(null)
+    setPdfUrl(null)
+
+    try {
+      const res = await fetch('/api/research/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker: normalizedTicker,
+          domain: domain || undefined,
+          fast: false,
+        }),
+      })
+
+      const payload = await res.json()
+      if (!res.ok) {
+        throw new Error(payload?.error || 'Research generation failed.')
+      }
+
+      setReport(payload)
+      await generatePdf(payload)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Research generation failed.')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto">
-      {/* ── Page header ─────────────────────────────────────────── */}
-      <motion.div
-        className="flex items-center justify-between mb-8"
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-      >
-        <div>
-          <p className="research-label mb-1">Research Workspace</p>
-          <h1 className="text-2xl font-bold text-fog tracking-tight">Dashboard</h1>
+    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col px-4 py-6 sm:px-6">
+      <section className="flex flex-1 flex-col rounded-lg border border-white/[0.07] bg-void/70 backdrop-blur-xl">
+        <div className="border-b border-white/[0.06] px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h1 className="text-lg font-semibold tracking-normal text-fog">Research generator</h1>
+              <p className="mt-1 text-sm text-fog-dim">Enter a stock ticker. Sidereus returns an institutional report and PDF.</p>
+            </div>
+            <div className="hidden items-center gap-2 rounded-md border border-white/[0.07] px-2.5 py-1.5 text-xs text-fog-dim sm:flex">
+              <ShieldCheck className="h-3.5 w-3.5 text-bull" />
+              Server-side keys
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Search */}
-          <div className="relative hidden sm:block">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-fog-dim/50" />
-            <input
-              type="text"
-              placeholder="Search ticker…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-surface/50 border border-white/[0.06] rounded-lg text-sm text-fog placeholder:text-fog-dim/40 focus:outline-none focus:ring-1 focus:ring-indigo/40 focus:border-indigo/30 transition-all duration-200 w-40 focus:w-56"
-            />
+        <div className="grid flex-1 grid-cols-1 lg:grid-cols-[1fr_260px]">
+          <div className="flex min-h-[560px] flex-col">
+            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-6">
+              <div className="max-w-2xl rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-sm leading-6 text-fog-dim">
+                Generate a 5-8 page report with thesis, industry context, financial analysis, valuation, bear/base/bull cases, catalysts, risks, skeptical review, monitoring indicators, and price target.
+              </div>
+
+              {(isGenerating || report) && (
+                <div className="max-w-2xl rounded-lg border border-white/[0.07] bg-white/[0.035] px-4 py-4">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-medium text-fog">
+                    {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    {isGenerating ? `Generating ${normalizedTicker} research...` : `${report?.ticker} report ready`}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    {AGENT_STEPS.map((step, index) => {
+                      const complete = index < activeStepCount
+                      return (
+                        <div
+                          key={step}
+                          className={`rounded-md border px-2 py-2 text-[11px] ${
+                            complete
+                              ? 'border-bull/30 bg-bull/10 text-bull'
+                              : 'border-white/[0.06] bg-white/[0.02] text-fog-dim'
+                          }`}
+                        >
+                          {step}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <div className="max-w-2xl rounded-lg border border-bear/30 bg-bear/10 px-4 py-3 text-sm text-bear">
+                  {error}
+                </div>
+              )}
+
+              {report && (
+                <article className="max-w-3xl rounded-lg border border-white/[0.07] bg-[#f7f3ea] px-5 py-5 text-[#171510] shadow-2xl">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-black/45">{report.domain || 'Equity Research'}</p>
+                      <h2 className="mt-1 text-xl font-semibold tracking-normal">{extractTitle(report.reportMarkdown, report.ticker)}</h2>
+                    </div>
+                    {pdfUrl && (
+                      <a
+                        href={pdfUrl}
+                        download={`${report.ticker}_sidereus_research.pdf`}
+                        className="inline-flex items-center gap-2 rounded-md bg-[#171510] px-3 py-2 text-xs font-semibold text-[#f7f3ea]"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        PDF
+                      </a>
+                    )}
+                  </div>
+                  <pre className="whitespace-pre-wrap font-sans text-sm leading-7">{report.reportMarkdown}</pre>
+                </article>
+              )}
+            </div>
+
+            <form onSubmit={onSubmit} className="border-t border-white/[0.06] p-4">
+              <div className="flex flex-col gap-3 rounded-lg border border-white/[0.08] bg-white/[0.04] p-3 sm:flex-row">
+                <input
+                  value={ticker}
+                  onChange={(event) => setTicker(event.target.value)}
+                  placeholder="Ticker, e.g. NVDA"
+                  className="min-h-11 flex-1 bg-transparent px-2 text-base text-fog placeholder:text-fog-dim/50 focus:outline-none"
+                  aria-label="Stock ticker"
+                />
+                <select
+                  value={domain}
+                  onChange={(event) => setDomain(event.target.value)}
+                  className="min-h-11 rounded-md border border-white/[0.08] bg-void px-3 text-sm text-fog-dim focus:outline-none"
+                  aria-label="Research domain"
+                >
+                  <option value="">Auto domain</option>
+                  <option value="AI Supply Chain">AI Supply Chain</option>
+                  <option value="Biotechnology">Biotechnology</option>
+                  <option value="Semiconductor Infrastructure">Semiconductors</option>
+                  <option value="Data Center Ecosystem">Data Center</option>
+                  <option value="Frontier Technology">Frontier Tech</option>
+                </select>
+                <button
+                  type="submit"
+                  disabled={!normalizedTicker || isGenerating}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-fog px-4 text-sm font-semibold text-void transition hover:bg-fog/90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Generate
+                </button>
+              </div>
+            </form>
           </div>
 
-          <Link href="/research/NVDA">
-            <motion.button
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-fog transition-all duration-200"
-              style={{
-                background: 'linear-gradient(135deg, rgba(181,166,216,0.18), rgba(143,169,216,0.10))',
-                border: '1px solid rgba(181,166,216,0.22)',
-              }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <Plus className="w-4 h-4" />
-              New Report
-            </motion.button>
-          </Link>
+          <aside className="border-t border-white/[0.06] p-5 lg:border-l lg:border-t-0">
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-fog-dim">Output</p>
+            <div className="mt-4 space-y-3 text-sm text-fog-dim">
+              <div className="rounded-md border border-white/[0.07] p-3">Institutional report</div>
+              <div className="rounded-md border border-white/[0.07] p-3">Skeptical analyst review</div>
+              <div className="rounded-md border border-white/[0.07] p-3">Price target framework</div>
+              <div className="rounded-md border border-white/[0.07] p-3">Automatic PDF</div>
+            </div>
+          </aside>
         </div>
-      </motion.div>
-
-      {/* ── KPI metrics row ──────────────────────────────────────── */}
-      <motion.div
-        className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        {[
-          { label: 'Reports Generated', value: '24', icon: <FileText className="w-4 h-4 text-lavender" />, accent: '#B5A6D8', change: 8.3, changeLabel: 'this month' },
-          { label: 'Avg Price Target Upside', value: '+18.4%', icon: <TrendingUp className="w-4 h-4 text-bull" />, accent: '#6AA87A', change: 2.1, changeLabel: 'vs last month' },
-          { label: 'Agents Running', value: '3', icon: <Zap className="w-4 h-4 text-gold" />, accent: '#E0B96A' },
-          { label: 'Watchlist Items', value: '12', icon: <Activity className="w-4 h-4 text-morning-blue" />, accent: '#8FA9D8', change: 20, changeLabel: 'added this week' },
-        ].map((metric, i) => (
-          <motion.div key={metric.label} variants={itemVariants}>
-            <MetricCard {...metric} delay={i * 0.06} />
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* ── Main content grid ─────────────────────────────────────── */}
-      <motion.div
-        className="grid grid-cols-1 xl:grid-cols-3 gap-6"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        {/* ── Market watch (2/3 width) ─────────────────────────── */}
-        <motion.div className="xl:col-span-2 space-y-4" variants={itemVariants}>
-          <GlassCard padding="none" noHover>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
-              <h2 className="text-sm font-semibold text-fog">Coverage Universe</h2>
-              <span className="text-xs text-fog-dim/60">Live</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4">
-              {marketSnapshot.map((item) => (
-                <ResearchTicker key={item.ticker} item={item} />
-              ))}
-            </div>
-          </GlassCard>
-        </motion.div>
-
-        {/* ── Recent reports (1/3 width) ────────────────────────── */}
-        <motion.div variants={itemVariants}>
-          <GlassCard padding="none" noHover className="h-full">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
-              <h2 className="text-sm font-semibold text-fog">Recent Reports</h2>
-              <Link href="/research" className="text-xs text-morning-blue hover:text-fog transition-colors">
-                View all
-              </Link>
-            </div>
-            <div className="py-2">
-              {RECENT_REPORTS.map((report) => (
-                <ReportRow key={report.ticker} report={report} livePrice={marketByTicker.get(report.ticker)?.price} />
-              ))}
-            </div>
-
-            {/* Generate new */}
-            <div className="px-4 py-4 border-t border-white/[0.05]">
-              <Link href="/research/new">
-                <motion.div
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm text-fog-dim hover:text-fog transition-colors duration-200 border border-dashed border-white/[0.08] hover:border-white/[0.14]"
-                  whileHover={{ y: -1 }}
-                >
-                  <Plus className="w-4 h-4" />
-                  Generate research report
-                </motion.div>
-              </Link>
-            </div>
-          </GlassCard>
-        </motion.div>
-      </motion.div>
-
-      {/* ── Quick access row ─────────────────────────────────────── */}
-      <motion.div
-        className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.5 }}
-      >
-        {MOCK_TICKERS.slice(0, 4).map((t) => (
-          <Link key={t.ticker} href={`/research/${t.ticker}`}>
-            <motion.div
-              className="glass-card rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer group"
-              whileHover={{ y: -2, transition: { duration: 0.15 } }}
-            >
-              <div className="w-7 h-7 rounded-md bg-surface-high flex items-center justify-center flex-shrink-0">
-                <span className="text-[10px] font-bold text-fog-dim">{t.ticker.slice(0, 2)}</span>
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-fog">{t.ticker}</p>
-                <p className="text-[10px] text-fog-dim truncate">{t.name.split(' ')[0]}</p>
-              </div>
-            </motion.div>
-          </Link>
-        ))}
-      </motion.div>
+      </section>
     </div>
   )
 }
