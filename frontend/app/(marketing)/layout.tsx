@@ -1,35 +1,30 @@
-// Marketing layout — landing page
+// Marketing layout - landing page
 // The atmospheric background is rendered here for the full-bleed experience.
 import Link from 'next/link'
 import { Zap } from 'lucide-react'
 import AtmosphereWrapper from '@/components/atmosphere/AtmosphereWrapper'
 
-const MONET_URL =
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Monet_-_Impression%2C_Sunrise.jpg/80px-Monet_-_Impression%2C_Sunrise.jpg'
-
 const NAV_LINKS = [
-  { label: 'Research',        href: '/research' },
+  { label: 'Research', href: '/research' },
   { label: 'AI Supply Chain', href: '/supply-chain' },
-  { label: 'Biotech',         href: '/biotech' },
+  { label: 'Biotech', href: '/biotech' },
 ]
+
+const APP_LOGO = '/logo-monet.webp'
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-screen bg-void overflow-x-hidden">
-      {/* Living atmospheric background (client component wrapper) */}
       <AtmosphereWrapper />
 
-      {/* Content layer sits above the atmosphere */}
       <div className="relative z-10">
-        {/* ── Marketing nav ────────────────────────────────── */}
         <header className="fixed top-0 left-0 right-0 z-50">
           <nav className="flex items-center justify-between px-8 py-5 glass-heavy border-b border-white/[0.04]">
             <Link href="/" className="flex items-center gap-2.5">
-              {/* Monet "Impression, Sunrise" as logo */}
               <img
-                src={MONET_URL}
-                alt="Impression, Sunrise — Monet"
-                className="w-8 h-8 rounded-md object-cover ring-1 ring-white/10"
+                src={APP_LOGO}
+                alt="Impression, Sunrise by Claude Monet"
+                className="w-7 h-7 rounded-md object-cover border border-white/20"
               />
               <span className="text-fog font-semibold tracking-tight">Sidereus</span>
             </Link>
@@ -71,15 +66,14 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
 
         {children}
 
-        {/* ── Footer ─────────────────────────────────────── */}
         <footer className="glass-heavy border-t border-white/[0.04] mt-32 py-12 px-8">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <img
-                  src={MONET_URL}
-                  alt="Impression, Sunrise — Monet"
-                  className="w-7 h-7 rounded object-cover ring-1 ring-white/10"
+                  src={APP_LOGO}
+                  alt="Impression, Sunrise by Claude Monet"
+                  className="w-6 h-6 rounded object-cover border border-white/20"
                 />
                 <span className="text-fog font-semibold text-sm">Sidereus</span>
               </div>
@@ -111,7 +105,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="max-w-7xl mx-auto mt-10 pt-6 border-t border-white/[0.04] flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-fog-dim/60">© 2026 Sidereus Research. All rights reserved.</p>
+            <p className="text-xs text-fog-dim/60">� 2026 Sidereus Research. All rights reserved.</p>
             <p className="text-xs text-fog-dim/40">
               For professional and institutional use. Past performance is not indicative of future results.
             </p>

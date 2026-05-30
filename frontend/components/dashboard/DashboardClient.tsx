@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Plus, TrendingUp, TrendingDown, Zap, FileText, Activity } from 'lucide-react'
 import GlassCard from '@/components/glass/GlassCard'
@@ -9,15 +9,39 @@ import { formatPrice, formatPct, formatMarketCap, getChangeColor, getDomainBadge
 import { MOCK_TICKERS } from '@/lib/constants'
 import Link from 'next/link'
 
-// Demo market data
-const MARKET_SNAPSHOT = [
-  { ticker: 'NVDA', price: 1152.35, change: 2.41, domain: 'AI Supply Chain', cap: 2.83e12 },
-  { ticker: 'ASML', price: 987.12, change: -0.83, domain: 'Semiconductors', cap: 388e9 },
-  { ticker: 'VRT', price: 112.45, change: 4.17, domain: 'Data Center', cap: 44e9 },
-  { ticker: 'MRNA', price: 68.22, change: -1.24, domain: 'Biotechnology', cap: 26e9 },
-  { ticker: 'AVGO', price: 1844.10, change: 1.67, domain: 'AI Supply Chain', cap: 858e9 },
-  { ticker: 'ANET', price: 402.80, change: 0.92, domain: 'Data Center', cap: 127e9 },
-]
+const COVERAGE_TICKERS = [
+  { ticker: 'SNDK', domain: 'Semiconductors' },
+  { ticker: 'LITE', domain: 'AI Supply Chain' },
+  { ticker: 'ARM', domain: 'Semiconductors' },
+  { ticker: 'CRWV', domain: 'Data Center' },
+  { ticker: 'ABVX', domain: 'Biotechnology' },
+  { ticker: 'AXTI', domain: 'AI Supply Chain' },
+] as const
+
+type SnapshotRow = {
+  ticker: string
+  price: number
+  change: number
+  domain: string
+  cap: number
+}
+
+type QuoteApiResponse = {
+  quotes?: Array<{
+    ticker: string
+    price: number | null
+    change: number | null
+    cap: number | null
+  }>
+}
+
+const MARKET_SNAPSHOT_FALLBACK: SnapshotRow[] = COVERAGE_TICKERS.map((row) => ({
+  ticker: row.ticker,
+  domain: row.domain,
+  price: 0,
+  change: 0,
+  cap: 0,
+}))
 
 const RECENT_REPORTS = [
   { ticker: 'NVDA', name: 'NVIDIA Corporation', rating: 'BUY', target: 1400, date: '2026-05-28', domain: 'AI Supply Chain' },
@@ -39,7 +63,7 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
 }
 
-function ResearchTicker({ item }: { item: typeof MARKET_SNAPSHOT[0] }) {
+function ResearchTicker({ item }: { item: SnapshotRow }) {
   const up = item.change >= 0
   return (
     <Link href={`/research/${item.ticker}`}>
@@ -55,7 +79,7 @@ function ResearchTicker({ item }: { item: typeof MARKET_SNAPSHOT[0] }) {
             </span>
           </div>
           <div className="text-right">
-            <p className="text-base font-semibold mono-nums text-fog">{formatPrice(item.price)}</p>
+            <p className="text-base font-semibold mono-nums text-fog">{item.price > 0 ? formatPrice(item.price) : 'N/A'}</p>
             <div className={`flex items-center gap-1 justify-end ${getChangeColor(item.change)}`}>
               {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               <span className="text-xs mono-nums font-medium">{formatPct(item.change)}</span>
@@ -64,15 +88,15 @@ function ResearchTicker({ item }: { item: typeof MARKET_SNAPSHOT[0] }) {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-[11px] text-fog-dim">Mkt Cap</span>
-          <span className="text-[11px] mono-nums text-fog-dim">{formatMarketCap(item.cap)}</span>
+          <span className="text-[11px] mono-nums text-fog-dim">{item.cap > 0 ? formatMarketCap(item.cap) : 'N/A'}</span>
         </div>
       </motion.div>
     </Link>
   )
 }
 
-function ReportRow({ report }: { report: typeof RECENT_REPORTS[0] }) {
-  const upside = ((report.target / (MARKET_SNAPSHOT.find(m => m.ticker === report.ticker)?.price ?? report.target)) - 1) * 100
+function ReportRow({ report, livePrice }: { report: typeof RECENT_REPORTS[0], livePrice?: number }) {
+  const upside = ((report.target / (livePrice || report.target)) - 1) * 100
   const ratingColor = report.rating === 'BUY' || report.rating === 'OUTPERFORM' ? 'text-bull' : report.rating === 'SELL' ? 'text-bear' : 'text-neutral'
   return (
     <Link href={`/research/${report.ticker}`}>
@@ -101,6 +125,47 @@ function ReportRow({ report }: { report: typeof RECENT_REPORTS[0] }) {
 
 export default function DashboardClient() {
   const [searchQuery, setSearchQuery] = useState('')
+  const [marketSnapshot, setMarketSnapshot] = useState<SnapshotRow[]>(MARKET_SNAPSHOT_FALLBACK)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadQuotes = async () => {
+      try {
+        const symbols = COVERAGE_TICKERS.map((item) => item.ticker).join(',')
+        const res = await fetch(`/api/market/quotes?tickers=${symbols}`, { cache: 'no-store' })
+        if (!res.ok) return
+
+        const payload = await res.json() as QuoteApiResponse
+        const quoteMap = new Map((payload.quotes ?? []).map((q) => [q.ticker.toUpperCase(), q]))
+        const nextRows = COVERAGE_TICKERS.map((item) => {
+          const quote = quoteMap.get(item.ticker)
+          return {
+            ticker: item.ticker,
+            domain: item.domain,
+            price: quote?.price ?? 0,
+            change: quote?.change ?? 0,
+            cap: quote?.cap ?? 0,
+          }
+        })
+        if (!cancelled) setMarketSnapshot(nextRows)
+      } catch {
+        // Keep existing values if quote fetch fails.
+      }
+    }
+
+    void loadQuotes()
+    const intervalId = setInterval(loadQuotes, 15000)
+    return () => {
+      cancelled = true
+      clearInterval(intervalId)
+    }
+  }, [])
+
+  const marketByTicker = useMemo(
+    () => new Map(marketSnapshot.map((item) => [item.ticker, item])),
+    [marketSnapshot]
+  )
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto">
@@ -180,7 +245,7 @@ export default function DashboardClient() {
               <span className="text-xs text-fog-dim/60">Live</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4">
-              {MARKET_SNAPSHOT.map((item) => (
+              {marketSnapshot.map((item) => (
                 <ResearchTicker key={item.ticker} item={item} />
               ))}
             </div>
@@ -198,7 +263,7 @@ export default function DashboardClient() {
             </div>
             <div className="py-2">
               {RECENT_REPORTS.map((report) => (
-                <ReportRow key={report.ticker} report={report} />
+                <ReportRow key={report.ticker} report={report} livePrice={marketByTicker.get(report.ticker)?.price} />
               ))}
             </div>
 

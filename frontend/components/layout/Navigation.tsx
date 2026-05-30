@@ -17,25 +17,24 @@ import {
 import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
-  { label: 'Dashboard',       href: '/dashboard',        icon: LayoutDashboard },
-  { label: 'Research',        href: '/research',          icon: FileText },
-  { label: 'AI Supply Chain', href: '/supply-chain',      icon: Network },
-  { label: 'Biotech Analysis',href: '/biotech',           icon: FlaskConical },
-  { label: 'Knowledge Graph', href: '/knowledge-graph',   icon: GitBranch },
-  { label: 'Watchlists',      href: '/watchlists',        icon: Star },
-  { label: 'Agents',          href: '/agents',            icon: Bot, badge: true },
+  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Research', href: '/research', icon: FileText },
+  { label: 'AI Supply Chain', href: '/supply-chain', icon: Network },
+  { label: 'Biotech Analysis', href: '/biotech', icon: FlaskConical },
+  { label: 'Knowledge Graph', href: '/knowledge-graph', icon: GitBranch },
+  { label: 'Watchlists', href: '/watchlists', icon: Star },
+  { label: 'Agents', href: '/agents', icon: Bot, badge: true },
 ]
 
 const SECTOR_ITEMS = [
-  { label: 'AI Infrastructure',  href: '/research?domain=ai-supply-chain',      color: '#8FA9D8' },
-  { label: 'Semiconductors',     href: '/research?domain=semiconductors',        color: '#B5A6D8' },
-  { label: 'Data Centers',       href: '/research?domain=data-center',           color: '#E0B96A' },
-  { label: 'Biotechnology',      href: '/research?domain=biotechnology',         color: '#E4B8A0' },
-  { label: 'Frontier Tech',      href: '/research?domain=frontier-technology',   color: '#5E6FA3' },
+  { label: 'AI Infrastructure', href: '/research?domain=ai-supply-chain', color: '#8FA9D8' },
+  { label: 'Semiconductors', href: '/research?domain=semiconductors', color: '#B5A6D8' },
+  { label: 'Data Centers', href: '/research?domain=data-center', color: '#E0B96A' },
+  { label: 'Biotechnology', href: '/research?domain=biotechnology', color: '#E4B8A0' },
+  { label: 'Frontier Tech', href: '/research?domain=frontier-technology', color: '#5E6FA3' },
 ]
 
-const MONET_URL =
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Monet_-_Impression%2C_Sunrise.jpg/80px-Monet_-_Impression%2C_Sunrise.jpg'
+const APP_LOGO = '/logo-monet.webp'
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -47,15 +46,12 @@ export default function Navigation() {
 
   return (
     <nav className="flex flex-col h-full glass-heavy border-r border-white/[0.05]">
-      {/* ── Logo ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-5 py-6 border-b border-white/[0.05]">
-        <div className="relative flex-shrink-0">
-          {/* Monet painting as logo */}
+        <div className="relative">
           <img
-            src={MONET_URL}
-            alt="Impression, Sunrise — Monet"
-            className="w-9 h-9 rounded-lg object-cover ring-1 ring-white/10"
-            style={{ imageRendering: 'auto' }}
+            src={APP_LOGO}
+            alt="Impression, Sunrise by Claude Monet"
+            className="w-8 h-8 rounded-lg object-cover border border-white/20"
           />
           <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-gold animate-pulse-soft" />
         </div>
@@ -70,7 +66,6 @@ export default function Navigation() {
         </div>
       </div>
 
-      {/* ── Main nav ─────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
         {NAV_ITEMS.map((item) => {
           const active = isActive(item.href)
@@ -105,7 +100,6 @@ export default function Navigation() {
           )
         })}
 
-        {/* ── Sectors ──────────────────────────────────────── */}
         <div className="mt-5 mb-2 px-3">
           <div className="flex items-center gap-2">
             <div className="h-px flex-1 bg-white/[0.05]" />
@@ -128,7 +122,6 @@ export default function Navigation() {
         ))}
       </div>
 
-      {/* ── Footer ───────────────────────────────────────────── */}
       <div className="px-3 pb-4 pt-3 border-t border-white/[0.05]">
         <Link href="/settings">
           <motion.div
