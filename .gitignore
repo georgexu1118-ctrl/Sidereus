@@ -39,6 +39,7 @@ output/
 node_modules/
 .next/
 .turbo/
+.npm-cache/
 npm-debug.log*
 
 # ── OS / editor ─────────────────────────────────────────────
@@ -47,3 +48,4 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+.vercel
