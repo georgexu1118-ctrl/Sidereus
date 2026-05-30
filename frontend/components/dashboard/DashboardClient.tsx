@@ -100,64 +100,90 @@ export default function DashboardClient() {
   }
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col px-4 py-6 sm:px-6">
-      <section className="flex flex-1 flex-col rounded-lg border border-white/[0.07] bg-void/70 backdrop-blur-xl">
-        {/* ── Compact header ───────────────────────────────────────── */}
-        <div className="border-b border-white/[0.06] px-5 py-3.5">
-          <div className="flex items-center justify-between gap-3">
+    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col px-4 pt-4 pb-6 sm:px-6">
+      {/* ═══════════════════════════════════════════════════════════════
+          HERO INPUT — the very first thing visible.
+          Sticky positioning keeps it pinned even after scrolling.
+          Large, centered, visually unmistakable.
+      ═══════════════════════════════════════════════════════════════ */}
+      <div className="sticky top-4 z-30 mb-5">
+        <div className="rounded-2xl border border-lavender/25 bg-void/85 px-5 py-5 shadow-[0_20px_60px_-15px_rgba(181,166,216,0.25)] backdrop-blur-2xl sm:px-7 sm:py-6">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h1 className="text-base font-semibold tracking-normal text-fog">Research generator</h1>
-              <p className="mt-0.5 text-xs text-fog-dim">Enter a ticker. Sidereus returns an institutional report, supply chain flowchart, and PDF.</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gold/80">
+                Sidereus · Research Generator
+              </p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-fog sm:text-2xl">
+                Enter a ticker
+              </h1>
             </div>
             <div className="hidden items-center gap-2 rounded-md border border-white/[0.07] px-2.5 py-1.5 text-xs text-fog-dim sm:flex">
               <ShieldCheck className="h-3.5 w-3.5 text-bull" />
               Server-side keys
             </div>
           </div>
+
+          <form onSubmit={onSubmit}>
+            <div className="flex flex-col gap-3 rounded-xl border border-lavender/20 bg-white/[0.04] p-3 shadow-inner sm:flex-row sm:items-stretch">
+              <input
+                value={ticker}
+                onChange={(event) => setTicker(event.target.value)}
+                placeholder="NVDA, ASML, VRT, MRNA…"
+                className="min-h-12 flex-1 rounded-md bg-transparent px-3 text-lg font-medium tracking-tight text-fog placeholder:text-fog-dim/40 focus:outline-none focus:ring-2 focus:ring-lavender/40"
+                aria-label="Stock ticker"
+                autoFocus
+              />
+              <select
+                value={domain}
+                onChange={(event) => setDomain(event.target.value)}
+                className="min-h-12 rounded-md border border-white/[0.08] bg-void px-3 text-sm text-fog-dim focus:outline-none focus:ring-2 focus:ring-lavender/40"
+                aria-label="Research domain"
+              >
+                <option value="">Auto domain</option>
+                <option value="AI Supply Chain">AI Supply Chain</option>
+                <option value="Biotechnology">Biotechnology</option>
+                <option value="Semiconductor Infrastructure">Semiconductors</option>
+                <option value="Data Center Ecosystem">Data Center</option>
+                <option value="Frontier Technology">Frontier Tech</option>
+              </select>
+              <button
+                type="submit"
+                disabled={!normalizedTicker || isGenerating}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-gradient-to-br from-lavender/90 to-morning-blue/80 px-6 text-sm font-semibold text-void shadow-lg transition hover:from-lavender hover:to-morning-blue disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {isGenerating ? 'Generating…' : 'Generate report'}
+              </button>
+            </div>
+
+            {/* Quick-pick suggestions */}
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] uppercase tracking-[0.15em] text-fog-dim/60">Quick picks:</span>
+              {['NVDA', 'ASML', 'AVGO', 'VRT', 'MRNA', 'TSM'].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTicker(t)}
+                  className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-fog-dim transition hover:border-lavender/30 hover:text-fog"
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </form>
         </div>
+      </div>
 
-        {/* ── Ticker input — moved to top, visible above the fold ── */}
-        <form onSubmit={onSubmit} className="border-b border-white/[0.06] p-4">
-          <div className="flex flex-col gap-3 rounded-lg border border-white/[0.08] bg-white/[0.04] p-3 sm:flex-row">
-            <input
-              value={ticker}
-              onChange={(event) => setTicker(event.target.value)}
-              placeholder="Ticker, e.g. NVDA"
-              className="min-h-11 flex-1 bg-transparent px-2 text-base text-fog placeholder:text-fog-dim/50 focus:outline-none"
-              aria-label="Stock ticker"
-              autoFocus
-            />
-            <select
-              value={domain}
-              onChange={(event) => setDomain(event.target.value)}
-              className="min-h-11 rounded-md border border-white/[0.08] bg-void px-3 text-sm text-fog-dim focus:outline-none"
-              aria-label="Research domain"
-            >
-              <option value="">Auto domain</option>
-              <option value="AI Supply Chain">AI Supply Chain</option>
-              <option value="Biotechnology">Biotechnology</option>
-              <option value="Semiconductor Infrastructure">Semiconductors</option>
-              <option value="Data Center Ecosystem">Data Center</option>
-              <option value="Frontier Technology">Frontier Tech</option>
-            </select>
-            <button
-              type="submit"
-              disabled={!normalizedTicker || isGenerating}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-fog px-4 text-sm font-semibold text-void transition hover:bg-fog/90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Generate
-            </button>
-          </div>
-        </form>
-
-        {/* ── Main grid ────────────────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════
+          OUTPUT SECTION (below the hero input)
+      ═══════════════════════════════════════════════════════════════ */}
+      <section className="flex flex-1 flex-col rounded-lg border border-white/[0.07] bg-void/70 backdrop-blur-xl">
         <div className="grid flex-1 grid-cols-1 lg:grid-cols-[1fr_260px]">
           <div className="flex min-h-[420px] flex-col">
             <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
               {!isGenerating && !report && !error && (
                 <div className="max-w-2xl rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-sm leading-6 text-fog-dim">
-                  Generates a 5-8 page report: investment thesis, AI supply chain flowchart (rendered visually), financial analysis, valuation, bear/base/bull cases, catalysts, risks, skeptical review, and a price target.
+                  Sidereus generates a 5-8 page report: investment thesis, AI supply chain flowchart (rendered visually), financial analysis, valuation, bear/base/bull cases, catalysts, risks, skeptical review, and a price target.
                 </div>
               )}
 
