@@ -1,8 +1,11 @@
 'use client'
 
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, FileText, Loader2, Send, ShieldCheck } from 'lucide-react'
-import ReportRenderer from '@/components/research/ReportRenderer'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 
 type ReportPayload = {
   ticker: string
@@ -32,13 +35,63 @@ function extractTitle(markdown: string, ticker: string) {
   return firstHeading?.replace(/^#\s+/, '') || `${ticker} Research Report`
 }
 
+function MermaidBlock({ chart }: { chart: string }) {
+  const [svg, setSvg] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    async function renderChart() {
+      try {
+        const mermaidModule = await import('mermaid')
+        mermaidModule.default.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'default',
+        })
+        const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`
+        const { svg: renderedSvg } = await mermaidModule.default.render(id, chart)
+        if (!cancelled) {
+          setSvg(renderedSvg)
+          setError('')
+        }
+      } catch {
+        if (!cancelled) {
+          setSvg('')
+          setError('Mermaid render failed')
+        }
+      }
+    }
+    void renderChart()
+    return () => {
+      cancelled = true
+    }
+  }, [chart])
+
+  if (error) {
+    return <pre className="overflow-x-auto rounded-md border border-black/10 bg-white p-3 text-xs">{chart}</pre>
+  }
+
+  if (!svg) {
+    return <p className="text-xs text-black/55">Rendering chart...</p>
+  }
+
+  return (
+    <div
+      className="overflow-x-auto rounded-md border border-black/10 bg-white p-3"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  )
+}
+
 export default function DashboardClient() {
   const [ticker, setTicker] = useState('')
   const [domain, setDomain] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [report, setReport] = useState<ReportPayload | null>(null)
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const reportRef = useRef<HTMLElement | null>(null)
 
   const normalizedTicker = useMemo(
     () => ticker.trim().toUpperCase().replace(/[^A-Z0-9.-]/g, ''),
@@ -47,20 +100,45 @@ export default function DashboardClient() {
 
   const activeStepCount = report ? AGENT_STEPS.length : isGenerating ? 6 : 0
 
-  async function generatePdf(nextReport: ReportPayload) {
-    const res = await fetch('/api/research/pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ticker: nextReport.ticker,
-        title: extractTitle(nextReport.reportMarkdown, nextReport.ticker),
-        markdown: nextReport.reportMarkdown,
-      }),
-    })
+  async function generatePdfFromPreview() {
+    if (!reportRef.current || !report) return
 
-    if (!res.ok) return
-    const blob = await res.blob()
-    setPdfUrl(URL.createObjectURL(blob))
+    setIsExportingPdf(true)
+    setError(null)
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const canvas = await html2canvas(reportRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#f7f3ea',
+      })
+
+      const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' })
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+
+      const imageData = canvas.toDataURL('image/png')
+      const imageWidth = pdfWidth
+      const imageHeight = (canvas.height * imageWidth) / canvas.width
+
+      let heightLeft = imageHeight
+      let position = 0
+      pdf.addImage(imageData, 'PNG', 0, position, imageWidth, imageHeight)
+      heightLeft -= pdfHeight
+
+      while (heightLeft > 0) {
+        position = heightLeft - imageHeight
+        pdf.addPage()
+        pdf.addImage(imageData, 'PNG', 0, position, imageWidth, imageHeight)
+        heightLeft -= pdfHeight
+      }
+
+      pdf.save(`${report.ticker}_sidereus_research.pdf`)
+    } catch {
+      setError('PDF export failed. Please try again.')
+    } finally {
+      setIsExportingPdf(false)
+    }
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -70,7 +148,6 @@ export default function DashboardClient() {
     setIsGenerating(true)
     setError(null)
     setReport(null)
-    setPdfUrl(null)
 
     try {
       const res = await fetch('/api/research/generate', {
@@ -89,7 +166,6 @@ export default function DashboardClient() {
       }
 
       setReport(payload)
-      await generatePdf(payload)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Research generation failed.')
     } finally {
@@ -214,24 +290,46 @@ export default function DashboardClient() {
               )}
 
               {report && (
-                <article className="max-w-3xl rounded-lg border border-white/[0.07] bg-[#f7f3ea] px-5 py-5 text-[#171510] shadow-2xl">
+                <article ref={reportRef} className="max-w-3xl rounded-lg border border-white/[0.07] bg-[#f7f3ea] px-5 py-5 text-[#171510] shadow-2xl">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-3">
                     <div>
                       <p className="text-xs uppercase tracking-[0.16em] text-black/45">{report.domain || 'Equity Research'}</p>
                       <h2 className="mt-1 text-xl font-semibold tracking-normal">{extractTitle(report.reportMarkdown, report.ticker)}</h2>
                     </div>
-                    {pdfUrl && (
-                      <a
-                        href={pdfUrl}
-                        download={`${report.ticker}_sidereus_research.pdf`}
-                        className="inline-flex items-center gap-2 rounded-md bg-[#171510] px-3 py-2 text-xs font-semibold text-[#f7f3ea]"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        PDF
-                      </a>
-                    )}
+                    <button
+                      type="button"
+                      onClick={generatePdfFromPreview}
+                      disabled={isExportingPdf}
+                      className="inline-flex items-center gap-2 rounded-md bg-[#171510] px-3 py-2 text-xs font-semibold text-[#f7f3ea] disabled:opacity-60"
+                    >
+                      {isExportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      {isExportingPdf ? 'Exporting...' : 'PDF'}
+                    </button>
                   </div>
-                  <ReportRenderer markdown={report.reportMarkdown} />
+                  <div className="prose prose-sm max-w-none prose-headings:text-[#171510] prose-p:text-[#171510] prose-li:text-[#171510] prose-strong:text-[#171510] prose-pre:rounded-md prose-pre:border prose-pre:border-black/10 prose-pre:bg-white prose-pre:text-[#171510]">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        code({ className, children, ...props }) {
+                          const language = /language-(\w+)/.exec(className || '')?.[1]
+                          const codeText = String(children).replace(/\n$/, '')
+                          if (language === 'mermaid') {
+                            return <MermaidBlock chart={codeText} />
+                          }
+                          return (
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          )
+                        },
+                        pre({ children }) {
+                          return <pre className="overflow-x-auto">{children}</pre>
+                        },
+                      }}
+                    >
+                      {report.reportMarkdown}
+                    </ReactMarkdown>
+                  </div>
                 </article>
               )}
             </div>
