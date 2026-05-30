@@ -43,6 +43,27 @@ Optional model overrides: `ANTHROPIC_PRIMARY_MODEL`, `ANTHROPIC_FAST_MODEL`,
 Keys are validated at startup, masked in logs, and never exposed to the
 frontend. See **[SECURITY.md](SECURITY.md)** for the full model.
 
+### Market data providers
+
+`DataCollectionAgent` now supports multi-provider quote retrieval with fallback:
+
+1. `finnhub`
+2. `twelvedata`
+3. `yahoo` (via `yfinance`)
+
+Configure in `.env`:
+
+```bash
+MARKET_DATA_PROVIDER_ORDER=finnhub,twelvedata,yahoo
+FINNHUB_API_KEY=...
+TWELVEDATA_API_KEY=...
+```
+
+Notes:
+- Yahoo can be delayed on some exchanges.
+- For Japan, China, and Europe, use vendor plans with real-time exchange entitlements.
+- The agent output includes a `live_quote` block with provider metadata and timestamp.
+
 ### Deploying on Vercel
 
 Set the same variables under **Project → Settings → Environment Variables**.
