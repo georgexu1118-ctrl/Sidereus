@@ -5,8 +5,7 @@ import { useRef } from 'react'
 import Link from 'next/link'
 import { ArrowRight, TrendingUp, Shield, Zap } from 'lucide-react'
 
-const HEADLINE_WORDS = ['AI-Native', 'Equity', 'Research']
-const HEADLINE_WORDS_2 = ['For the Next', 'Frontier']
+const HEADLINE_WORDS = ['Sidereus', 'Nuncius']
 
 function MagneticButton({ children, href }: { children: React.ReactNode; href: string }) {
   return (
@@ -67,50 +66,21 @@ export default function Hero() {
             {HEADLINE_WORDS.map((word, i) => (
               <motion.span
                 key={word}
-                className="inline-block mr-[0.25em]"
-                initial={{ opacity: 0, y: 24, filter: 'blur(8px)' }}
-                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                transition={{ duration: 0.7, delay: 0.2 + i * 0.09, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <span
-                  className={
-                    word === 'AI-Native'
-                      ? 'text-gradient-lavender'
-                      : word === 'Equity'
-                        ? 'text-gradient-white'
-                        : 'text-gradient-white'
-                  }
-                  style={{ fontSize: 'clamp(52px, 8vw, 112px)', fontWeight: 700, lineHeight: 1.0, letterSpacing: '-0.03em' }}
-                >
-                  {word}
-                </span>
-              </motion.span>
-            ))}
-          </span>
-          <span className="block mt-1">
-            {HEADLINE_WORDS_2.map((phrase, i) => (
-              <motion.span
-                key={phrase}
                 className="inline-block mr-[0.2em]"
-                initial={{ opacity: 0, y: 24, filter: 'blur(8px)' }}
+                initial={{ opacity: 0, y: 20, filter: 'blur(6px)' }}
                 animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                transition={{ duration: 0.7, delay: 0.45 + i * 0.09, ease: [0.16, 1, 0.3, 1] }}
+                transition={{ duration: 0.8, delay: 0.2 + i * 0.12, ease: [0.16, 1, 0.3, 1] }}
               >
                 <span
                   style={{
-                    fontSize: 'clamp(52px, 8vw, 112px)',
-                    fontWeight: 700,
-                    lineHeight: 1.0,
-                    letterSpacing: '-0.03em',
-                    background: i === 1
-                      ? 'linear-gradient(135deg, #E0B96A 0%, #E4B8A0 100%)'
-                      : undefined,
-                    WebkitBackgroundClip: i === 1 ? 'text' : undefined,
-                    WebkitTextFillColor: i === 1 ? 'transparent' : undefined,
-                    color: i === 1 ? undefined : 'rgba(244,244,242,0.6)',
+                    fontSize: 'clamp(40px, 5.5vw, 72px)',
+                    fontWeight: 600,
+                    lineHeight: 1.05,
+                    letterSpacing: '-0.02em',
+                    color: '#F4F4F2',
                   }}
                 >
-                  {phrase}
+                  {word}
                 </span>
               </motion.span>
             ))}
