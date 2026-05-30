@@ -19,38 +19,48 @@ export default function MermaidDiagram({ chart, id }: MermaidDiagramProps) {
 
     async function render() {
       try {
-        // Dynamic import keeps mermaid out of the initial bundle.
         const mermaid = (await import('mermaid')).default
 
         if (!mermaidInitialized) {
           mermaid.initialize({
             startOnLoad: false,
-            theme: 'dark',
+            theme: 'base',
             securityLevel: 'loose',
             fontFamily: 'var(--font-geist-sans), Inter, system-ui, sans-serif',
+            flowchart: {
+              curve: 'linear',     // clean right-angle / straight connectors
+              htmlLabels: true,
+              padding: 10,
+              nodeSpacing: 42,
+              rankSpacing: 55,
+              useMaxWidth: true,
+            },
             themeVariables: {
-              // Sidereus Monet palette
-              primaryColor: '#1A2230',
-              primaryTextColor: '#F4F4F2',
-              primaryBorderColor: '#8FA9D8',
-              lineColor: '#8FA9D8',
-              secondaryColor: '#202B3A',
-              tertiaryColor: '#11151C',
-              background: '#0B0E13',
-              mainBkg: '#1A2230',
-              secondBkg: '#202B3A',
-              nodeBkg: '#1A2230',
-              nodeBorder: '#8FA9D8',
-              clusterBkg: '#11151C',
-              edgeLabelBackground: '#0B0E13',
-              labelTextColor: '#F4F4F2',
-              fontSize: '13px',
+              // Clean light "whiteboard" look — black boxes on white, like a
+              // printed research diagram. Sits on the cream report paper.
+              background: '#ffffff',
+              primaryColor: '#ffffff',        // node fill
+              primaryBorderColor: '#1b1b1b',  // node border
+              primaryTextColor: '#161310',    // node text
+              secondaryColor: '#f4efe4',
+              tertiaryColor: '#faf7f0',
+              lineColor: '#1b1b1b',           // arrows
+              textColor: '#161310',
+              mainBkg: '#ffffff',
+              nodeBkg: '#ffffff',
+              nodeBorder: '#1b1b1b',
+              clusterBkg: '#f3eee2',          // subgraph cluster fill
+              clusterBorder: '#b7a878',       // subgraph cluster border
+              edgeLabelBackground: '#ffffff',
+              titleColor: '#161310',
+              fontSize: '14px',
+              nodeTextColor: '#161310',
             },
           })
           mermaidInitialized = true
         }
 
-        const renderId = id || `mermaid-${Math.random().toString(36).slice(2, 9)}`
+        const renderId = (id || `mermaid-${Math.random().toString(36).slice(2, 9)}`).replace(/[^a-zA-Z0-9_-]/g, '')
         const { svg: renderedSvg } = await mermaid.render(renderId, chart)
 
         if (!cancelled) {
@@ -58,9 +68,7 @@ export default function MermaidDiagram({ chart, id }: MermaidDiagramProps) {
           setError(null)
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to render diagram')
-        }
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to render diagram')
       }
     }
 
@@ -70,9 +78,9 @@ export default function MermaidDiagram({ chart, id }: MermaidDiagramProps) {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-bear/20 bg-bear/5 p-3 text-xs text-bear">
-        Diagram render error: {error}
-        <pre className="mt-2 overflow-x-auto text-fog-dim/60">{chart.slice(0, 200)}…</pre>
+      <div className="rounded-lg border border-[#c08a8a] bg-[#fbeaea] p-3 text-xs text-[#7f3a3a]">
+        Diagram could not be rendered.
+        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-[#9c6f55]">{chart.slice(0, 220)}…</pre>
       </div>
     )
   }
@@ -80,7 +88,7 @@ export default function MermaidDiagram({ chart, id }: MermaidDiagramProps) {
   return (
     <div
       ref={containerRef}
-      className="my-4 overflow-x-auto rounded-lg border border-white/[0.06] bg-void/40 p-4"
+      className="my-5 overflow-x-auto rounded-xl border border-[#d8cdb0] bg-white p-5 shadow-[0_2px_14px_rgba(0,0,0,0.06)] [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   )

@@ -70,14 +70,78 @@ function stripHtml(input: string) {
     .trim()
 }
 
-// ── Yahoo Finance: price / share ────────────────────────────────
-async function fetchYahooQuote(ticker: string) {
+// ── Yahoo Finance (yfinance-style): price / share + market cap ──
+// Mirrors how ranaroussi/yfinance authenticates: fetch an A1 cookie, request
+// a crumb, then hit the v7 quote endpoint with that crumb. Falls back to the
+// no-auth v8 chart endpoint (price only) if the crumb flow is unavailable.
+const YF_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+
+let yfCrumbCache: { crumb: string; cookie: string; ts: number } | null = null
+
+async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null> {
+  // Cache the crumb for 10 minutes within a warm lambda.
+  if (yfCrumbCache && Date.now() - yfCrumbCache.ts < 600_000) {
+    return { crumb: yfCrumbCache.crumb, cookie: yfCrumbCache.cookie }
+  }
   try {
-    const data = await fetchJson(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}`)
-    return data?.quoteResponse?.result?.[0] || null
+    const cookieRes = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': YF_UA } })
+    const setCookie =
+      (cookieRes.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.().join('; ') ||
+      cookieRes.headers.get('set-cookie') ||
+      ''
+    const cookie = setCookie.split(';')[0] || setCookie
+    const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { 'User-Agent': YF_UA, Cookie: cookie },
+    })
+    const crumb = (await crumbRes.text()).trim()
+    if (!crumb || crumb.includes('<') || crumb.length > 40) return null
+    yfCrumbCache = { crumb, cookie, ts: Date.now() }
+    return { crumb, cookie }
   } catch {
     return null
   }
+}
+
+async function fetchYahooQuote(ticker: string) {
+  // Primary: v7 quote with crumb (full object incl. marketCap).
+  try {
+    const auth = await getYahooCrumb()
+    if (auth) {
+      const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&crumb=${encodeURIComponent(auth.crumb)}`
+      const res = await fetch(url, { headers: { 'User-Agent': YF_UA, Cookie: auth.cookie }, cache: 'no-store' })
+      if (res.ok) {
+        const data = await res.json()
+        const q = data?.quoteResponse?.result?.[0]
+        if (q?.regularMarketPrice != null) return q
+      }
+    }
+  } catch {
+    /* fall through to chart endpoint */
+  }
+
+  // Fallback: v8 chart endpoint (no auth) — price + 52w range, no market cap.
+  try {
+    const c = await fetchJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}`)
+    const meta = c?.chart?.result?.[0]?.meta
+    if (meta?.regularMarketPrice != null) {
+      const prev = meta.chartPreviousClose ?? meta.previousClose
+      const changePct = prev ? ((meta.regularMarketPrice - prev) / prev) * 100 : undefined
+      return {
+        regularMarketPrice: meta.regularMarketPrice,
+        regularMarketChangePercent: changePct,
+        marketCap: meta.marketCap ?? undefined,
+        currency: meta.currency || 'USD',
+        fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
+        fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+        longName: meta.longName,
+        shortName: meta.shortName || meta.symbol,
+      }
+    }
+  } catch {
+    /* give up */
+  }
+  return null
 }
 
 async function fetchYahooNews(ticker: string) {
@@ -103,14 +167,11 @@ function priceFactsMarkdown(quote: Record<string, unknown> | null): string {
   const price = quote.regularMarketPrice
   const currency = (quote.currency as string) || 'USD'
   const marketCap = quote.marketCap
-  // Enterprise value is not in the v7 quote endpoint; included only if present.
-  const ev = (quote as Record<string, unknown>).enterpriseValue
   const change = quote.regularMarketChangePercent
   const lines = [
     `- Current share price: ${typeof price === 'number' ? `$${price.toFixed(2)} ${currency}` : 'N/A'}`,
     typeof change === 'number' ? `- Day change: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '',
     `- Market capitalization: ${fmtMoney(marketCap)}`,
-    `- Enterprise value: ${ev ? fmtMoney(ev) : 'not available from live feed'}`,
     `- 52-week range: ${quote.fiftyTwoWeekLow ? `$${quote.fiftyTwoWeekLow}` : 'N/A'} – ${quote.fiftyTwoWeekHigh ? `$${quote.fiftyTwoWeekHigh}` : 'N/A'}`,
   ].filter(Boolean)
   return lines.join('\n')
@@ -251,10 +312,31 @@ A) TECHNOLOGY DIAGRAMS — 2 to 3 Mermaid diagrams that explain how the core tec
    \`\`\`
    Keep node labels short, use <br/> for line breaks, label edges with the real interface/material.
 
-B) SUPPLY CHAIN FLOWCHART — one end-to-end Mermaid flowchart (flowchart TB or LR) of the form:
-   Raw Materials -> Substrates -> Foundry -> Packaging -> System Integrators -> Cloud Providers -> End Users
-   but specialised to ${ticker}'s actual chain, with named real companies at each node where known.
-   Highlight ${ticker}'s own node. Use classDef to color ${ticker} differently.
+B) SUPPLY CHAIN FLOWCHART — one rich, multi-branch end-to-end Mermaid map (flowchart LR),
+   modelled on a professional analyst's supply-chain map: ${ticker} sits on the left and
+   FANS OUT through named intermediaries to many downstream end customers.
+   - Use $TICKER notation for public companies (e.g. $NVDA, $AMZN, $MSFT, $GOOGL, $AVGO).
+   - Group related paths into labelled subgraph clusters (one per key intermediary/partner),
+     each showing that intermediary then its specific downstream customers.
+   - Show at least 4-6 distinct parallel branches / customer sets, e.g.
+     ${ticker} --> $PARTNER --> {several hyperscalers / OEMs / cloud providers}.
+   - Name real companies where known (Microsoft, AWS, Google, Meta, Tencent, Baidu, ByteDance,
+     Alibaba, plus integrators/partners specific to ${ticker}'s industry).
+   - Highlight ${ticker}'s own nodes with: classDef focal fill:#B5A6D8,stroke:#161310,color:#161310,font-weight:bold;
+   Skeleton (replace with the real chain):
+   \`\`\`mermaid
+   flowchart LR
+       classDef focal fill:#B5A6D8,stroke:#161310,color:#161310,font-weight:bold;
+       subgraph BM[To Broad Market]
+         T1[$TICKER] --> P1[$PARTNER] --> A1[$AMZN]
+         P1 --> M1[$MSFT]
+         P1 --> G1[$GOOGL]
+       end
+       subgraph PR[Partner Program]
+         T2[$TICKER] --> P2[Integrator] --> C1[Cloud]
+       end
+       class T1,T2 focal
+   \`\`\`
 
 C) TECHNOLOGY EXPLAINERS — 2 short plain-language explainers (3-5 sentences each) of the hardest technical concepts, written so a generalist investor understands them.
 
@@ -294,7 +376,7 @@ FORMATTING (critical):
 WRITE EXACTLY THESE SECTIONS, IN ORDER:
 
 ## Price / Share
-Report the live figures below as a short factual paragraph (current share price, market capitalization, and enterprise value if available). Nothing else — no valuation commentary.
+Report the live figures below as a short factual paragraph (current share price and market capitalization). Nothing else — no valuation commentary, no enterprise value.
 ${priceFacts}
 
 ## Company Overview
