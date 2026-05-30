@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   LayoutDashboard,
   FileText,
@@ -11,50 +11,56 @@ import {
   Star,
   Bot,
   Settings,
-  ChevronRight,
-  TrendingUp,
   Zap,
+  FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { APP_NAME } from '@/lib/constants'
 
 const NAV_ITEMS = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Research', href: '/research', icon: FileText },
-  { label: 'Supply Chain', href: '/supply-chain', icon: Network },
-  { label: 'Knowledge Graph', href: '/knowledge-graph', icon: GitBranch },
-  { label: 'Watchlists', href: '/watchlists', icon: Star },
-  { label: 'Agents', href: '/agents', icon: Bot, badge: true },
+  { label: 'Dashboard',       href: '/dashboard',        icon: LayoutDashboard },
+  { label: 'Research',        href: '/research',          icon: FileText },
+  { label: 'AI Supply Chain', href: '/supply-chain',      icon: Network },
+  { label: 'Biotech Analysis',href: '/biotech',           icon: FlaskConical },
+  { label: 'Knowledge Graph', href: '/knowledge-graph',   icon: GitBranch },
+  { label: 'Watchlists',      href: '/watchlists',        icon: Star },
+  { label: 'Agents',          href: '/agents',            icon: Bot, badge: true },
 ]
 
-const MARKET_ITEMS = [
-  { label: 'AI Infrastructure', href: '/research?domain=ai-supply-chain', color: '#8FA9D8' },
-  { label: 'Semiconductors', href: '/research?domain=semiconductors', color: '#B5A6D8' },
-  { label: 'Data Centers', href: '/research?domain=data-center', color: '#E0B96A' },
-  { label: 'Biotechnology', href: '/research?domain=biotechnology', color: '#E4B8A0' },
-  { label: 'Frontier Tech', href: '/research?domain=frontier-technology', color: '#5E6FA3' },
+const SECTOR_ITEMS = [
+  { label: 'AI Infrastructure',  href: '/research?domain=ai-supply-chain',      color: '#8FA9D8' },
+  { label: 'Semiconductors',     href: '/research?domain=semiconductors',        color: '#B5A6D8' },
+  { label: 'Data Centers',       href: '/research?domain=data-center',           color: '#E0B96A' },
+  { label: 'Biotechnology',      href: '/research?domain=biotechnology',         color: '#E4B8A0' },
+  { label: 'Frontier Tech',      href: '/research?domain=frontier-technology',   color: '#5E6FA3' },
 ]
+
+const MONET_URL =
+  'https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Monet_-_Impression%2C_Sunrise.jpg/80px-Monet_-_Impression%2C_Sunrise.jpg'
 
 export default function Navigation() {
   const pathname = usePathname()
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard'
-    return pathname.startsWith(href)
+    return pathname.startsWith(href.split('?')[0])
   }
 
   return (
     <nav className="flex flex-col h-full glass-heavy border-r border-white/[0.05]">
-      {/* ── Logo ────────────────────────────────────────────── */}
+      {/* ── Logo ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-5 py-6 border-b border-white/[0.05]">
-        <div className="relative">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-lavender/80 to-morning-blue/60 flex items-center justify-center">
-            <TrendingUp className="w-4 h-4 text-void" strokeWidth={2.5} />
-          </div>
+        <div className="relative flex-shrink-0">
+          {/* Monet painting as logo */}
+          <img
+            src={MONET_URL}
+            alt="Impression, Sunrise — Monet"
+            className="w-9 h-9 rounded-lg object-cover ring-1 ring-white/10"
+            style={{ imageRendering: 'auto' }}
+          />
           <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-gold animate-pulse-soft" />
         </div>
         <div>
-          <span className="text-fog font-semibold text-base tracking-tight">{APP_NAME}</span>
+          <span className="text-fog font-semibold text-base tracking-tight">Sidereus</span>
           <div className="flex items-center gap-1 mt-0">
             <Zap className="w-2.5 h-2.5 text-gold" />
             <span className="text-[10px] text-gold/80 tracking-widest uppercase font-medium">
@@ -64,7 +70,7 @@ export default function Navigation() {
         </div>
       </div>
 
-      {/* ── Main navigation ─────────────────────────────────── */}
+      {/* ── Main nav ─────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
         {NAV_ITEMS.map((item) => {
           const active = isActive(item.href)
@@ -99,7 +105,7 @@ export default function Navigation() {
           )
         })}
 
-        {/* ── Sectors ────────────────────────────────────────── */}
+        {/* ── Sectors ──────────────────────────────────────── */}
         <div className="mt-5 mb-2 px-3">
           <div className="flex items-center gap-2">
             <div className="h-px flex-1 bg-white/[0.05]" />
@@ -108,24 +114,21 @@ export default function Navigation() {
           </div>
         </div>
 
-        {MARKET_ITEMS.map((item) => (
+        {SECTOR_ITEMS.map((item) => (
           <Link key={item.href} href={item.href}>
             <motion.div
               className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-fog-dim hover:text-fog hover:bg-white/[0.03] transition-colors duration-150"
               whileHover={{ x: 2 }}
               transition={{ duration: 0.15 }}
             >
-              <div
-                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                style={{ backgroundColor: item.color }}
-              />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
               <span className="text-xs font-medium">{item.label}</span>
             </motion.div>
           </Link>
         ))}
       </div>
 
-      {/* ── Footer ─────────────────────────────────────────── */}
+      {/* ── Footer ───────────────────────────────────────────── */}
       <div className="px-3 pb-4 pt-3 border-t border-white/[0.05]">
         <Link href="/settings">
           <motion.div

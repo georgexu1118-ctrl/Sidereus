@@ -226,7 +226,7 @@ export default function FloatingPanels() {
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.1 }}
           >
-            Think like Goldman Sachs.
+            Think like Serenity.
             <br />
             <span className="text-gradient-lavender">Move at machine speed.</span>
           </motion.h2>

@@ -1,8 +1,17 @@
-// Marketing layout — landing, about, pricing
+// Marketing layout — landing page
 // The atmospheric background is rendered here for the full-bleed experience.
 import Link from 'next/link'
-import { TrendingUp, Zap } from 'lucide-react'
+import { Zap } from 'lucide-react'
 import AtmosphereWrapper from '@/components/atmosphere/AtmosphereWrapper'
+
+const MONET_URL =
+  'https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Monet_-_Impression%2C_Sunrise.jpg/80px-Monet_-_Impression%2C_Sunrise.jpg'
+
+const NAV_LINKS = [
+  { label: 'Research',        href: '/research' },
+  { label: 'AI Supply Chain', href: '/supply-chain' },
+  { label: 'Biotech',         href: '/biotech' },
+]
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -16,20 +25,23 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
         <header className="fixed top-0 left-0 right-0 z-50">
           <nav className="flex items-center justify-between px-8 py-5 glass-heavy border-b border-white/[0.04]">
             <Link href="/" className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-lavender/80 to-morning-blue/60 flex items-center justify-center">
-                <TrendingUp className="w-3.5 h-3.5 text-void" strokeWidth={2.5} />
-              </div>
+              {/* Monet "Impression, Sunrise" as logo */}
+              <img
+                src={MONET_URL}
+                alt="Impression, Sunrise — Monet"
+                className="w-8 h-8 rounded-md object-cover ring-1 ring-white/10"
+              />
               <span className="text-fog font-semibold tracking-tight">Sidereus</span>
             </Link>
 
             <div className="hidden md:flex items-center gap-8">
-              {['Research', 'Supply Chain', 'Biotech', 'Pricing'].map((item) => (
+              {NAV_LINKS.map((item) => (
                 <Link
-                  key={item}
-                  href={`/${item.toLowerCase().replace(' ', '-')}`}
+                  key={item.href}
+                  href={item.href}
                   className="text-sm text-fog-dim hover:text-fog transition-colors duration-200"
                 >
-                  {item}
+                  {item.label}
                 </Link>
               ))}
             </div>
@@ -64,9 +76,11 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded bg-gradient-to-br from-lavender/80 to-morning-blue/60 flex items-center justify-center">
-                  <TrendingUp className="w-3 h-3 text-void" strokeWidth={2.5} />
-                </div>
+                <img
+                  src={MONET_URL}
+                  alt="Impression, Sunrise — Monet"
+                  className="w-7 h-7 rounded object-cover ring-1 ring-white/10"
+                />
                 <span className="text-fog font-semibold text-sm">Sidereus</span>
               </div>
               <p className="text-xs text-fog-dim max-w-xs">
@@ -78,7 +92,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
             <div className="flex gap-12">
               {[
                 { group: 'Research', links: ['AI Supply Chain', 'Semiconductors', 'Biotech', 'Data Center'] },
-                { group: 'Platform', links: ['Dashboard', 'Reports', 'Supply Chain', 'Knowledge Graph'] },
+                { group: 'Platform', links: ['Dashboard', 'Reports', 'AI Supply Chain', 'Knowledge Graph'] },
               ].map((section) => (
                 <div key={section.group}>
                   <p className="research-label mb-3">{section.group}</p>
