@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { Download, FileText, Loader2, Send, ShieldCheck } from 'lucide-react'
+import ReportRenderer from '@/components/research/ReportRenderer'
 
 type ReportPayload = {
   ticker: string
@@ -101,11 +102,12 @@ export default function DashboardClient() {
   return (
     <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col px-4 py-6 sm:px-6">
       <section className="flex flex-1 flex-col rounded-lg border border-white/[0.07] bg-void/70 backdrop-blur-xl">
-        <div className="border-b border-white/[0.06] px-5 py-4">
+        {/* ── Compact header ───────────────────────────────────────── */}
+        <div className="border-b border-white/[0.06] px-5 py-3.5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h1 className="text-lg font-semibold tracking-normal text-fog">Research generator</h1>
-              <p className="mt-1 text-sm text-fog-dim">Enter a stock ticker. Sidereus returns an institutional report and PDF.</p>
+              <h1 className="text-base font-semibold tracking-normal text-fog">Research generator</h1>
+              <p className="mt-0.5 text-xs text-fog-dim">Enter a ticker. Sidereus returns an institutional report, supply chain flowchart, and PDF.</p>
             </div>
             <div className="hidden items-center gap-2 rounded-md border border-white/[0.07] px-2.5 py-1.5 text-xs text-fog-dim sm:flex">
               <ShieldCheck className="h-3.5 w-3.5 text-bull" />
@@ -114,12 +116,50 @@ export default function DashboardClient() {
           </div>
         </div>
 
+        {/* ── Ticker input — moved to top, visible above the fold ── */}
+        <form onSubmit={onSubmit} className="border-b border-white/[0.06] p-4">
+          <div className="flex flex-col gap-3 rounded-lg border border-white/[0.08] bg-white/[0.04] p-3 sm:flex-row">
+            <input
+              value={ticker}
+              onChange={(event) => setTicker(event.target.value)}
+              placeholder="Ticker, e.g. NVDA"
+              className="min-h-11 flex-1 bg-transparent px-2 text-base text-fog placeholder:text-fog-dim/50 focus:outline-none"
+              aria-label="Stock ticker"
+              autoFocus
+            />
+            <select
+              value={domain}
+              onChange={(event) => setDomain(event.target.value)}
+              className="min-h-11 rounded-md border border-white/[0.08] bg-void px-3 text-sm text-fog-dim focus:outline-none"
+              aria-label="Research domain"
+            >
+              <option value="">Auto domain</option>
+              <option value="AI Supply Chain">AI Supply Chain</option>
+              <option value="Biotechnology">Biotechnology</option>
+              <option value="Semiconductor Infrastructure">Semiconductors</option>
+              <option value="Data Center Ecosystem">Data Center</option>
+              <option value="Frontier Technology">Frontier Tech</option>
+            </select>
+            <button
+              type="submit"
+              disabled={!normalizedTicker || isGenerating}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-fog px-4 text-sm font-semibold text-void transition hover:bg-fog/90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Generate
+            </button>
+          </div>
+        </form>
+
+        {/* ── Main grid ────────────────────────────────────────────── */}
         <div className="grid flex-1 grid-cols-1 lg:grid-cols-[1fr_260px]">
-          <div className="flex min-h-[560px] flex-col">
-            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-6">
-              <div className="max-w-2xl rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-sm leading-6 text-fog-dim">
-                Generate a 5-8 page report with thesis, industry context, financial analysis, valuation, bear/base/bull cases, catalysts, risks, skeptical review, monitoring indicators, and price target.
-              </div>
+          <div className="flex min-h-[420px] flex-col">
+            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+              {!isGenerating && !report && !error && (
+                <div className="max-w-2xl rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-sm leading-6 text-fog-dim">
+                  Generates a 5-8 page report: investment thesis, AI supply chain flowchart (rendered visually), financial analysis, valuation, bear/base/bull cases, catalysts, risks, skeptical review, and a price target.
+                </div>
+              )}
 
               {(isGenerating || report) && (
                 <div className="max-w-2xl rounded-lg border border-white/[0.07] bg-white/[0.035] px-4 py-4">
@@ -171,49 +211,17 @@ export default function DashboardClient() {
                       </a>
                     )}
                   </div>
-                  <pre className="whitespace-pre-wrap font-sans text-sm leading-7">{report.reportMarkdown}</pre>
+                  <ReportRenderer markdown={report.reportMarkdown} />
                 </article>
               )}
             </div>
-
-            <form onSubmit={onSubmit} className="border-t border-white/[0.06] p-4">
-              <div className="flex flex-col gap-3 rounded-lg border border-white/[0.08] bg-white/[0.04] p-3 sm:flex-row">
-                <input
-                  value={ticker}
-                  onChange={(event) => setTicker(event.target.value)}
-                  placeholder="Ticker, e.g. NVDA"
-                  className="min-h-11 flex-1 bg-transparent px-2 text-base text-fog placeholder:text-fog-dim/50 focus:outline-none"
-                  aria-label="Stock ticker"
-                />
-                <select
-                  value={domain}
-                  onChange={(event) => setDomain(event.target.value)}
-                  className="min-h-11 rounded-md border border-white/[0.08] bg-void px-3 text-sm text-fog-dim focus:outline-none"
-                  aria-label="Research domain"
-                >
-                  <option value="">Auto domain</option>
-                  <option value="AI Supply Chain">AI Supply Chain</option>
-                  <option value="Biotechnology">Biotechnology</option>
-                  <option value="Semiconductor Infrastructure">Semiconductors</option>
-                  <option value="Data Center Ecosystem">Data Center</option>
-                  <option value="Frontier Technology">Frontier Tech</option>
-                </select>
-                <button
-                  type="submit"
-                  disabled={!normalizedTicker || isGenerating}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-fog px-4 text-sm font-semibold text-void transition hover:bg-fog/90 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Generate
-                </button>
-              </div>
-            </form>
           </div>
 
           <aside className="border-t border-white/[0.06] p-5 lg:border-l lg:border-t-0">
             <p className="text-xs font-medium uppercase tracking-[0.16em] text-fog-dim">Output</p>
             <div className="mt-4 space-y-3 text-sm text-fog-dim">
               <div className="rounded-md border border-white/[0.07] p-3">Institutional report</div>
+              <div className="rounded-md border border-white/[0.07] p-3">AI supply chain flowchart</div>
               <div className="rounded-md border border-white/[0.07] p-3">Skeptical analyst review</div>
               <div className="rounded-md border border-white/[0.07] p-3">Price target framework</div>
               <div className="rounded-md border border-white/[0.07] p-3">Automatic PDF</div>

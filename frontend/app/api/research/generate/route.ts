@@ -207,6 +207,64 @@ ${contextMarkdown}`
 }
 
 function buildFinalPrompt(ticker: string, domain: string, contextMarkdown: string, evidenceMarkdown: string) {
+  const isSupplyChainDomain = ['AI Supply Chain', 'Semiconductor Infrastructure', 'Data Center Ecosystem', 'Frontier Technology'].includes(domain)
+
+  const flowchartBlock = isSupplyChainDomain
+    ? `
+
+CRITICAL: SUPPLY CHAIN FLOWCHART (required for ${ticker}):
+
+You MUST include a Mermaid flowchart (LR layout) titled exactly:
+"## AI Supply Chain Position — ${ticker}"
+
+The flowchart must visualize ${ticker}'s position in the AI supply chain showing:
+- Upstream suppliers / equipment / materials (with tickers)
+- ${ticker} itself, visually highlighted as the focal node
+- Downstream customers / hyperscalers (with tickers)
+- Edge labels for the relationship (e.g. "EUV machines", "HBM3E memory", "GPU compute", "CoWoS-L packaging")
+
+Use this exact Mermaid syntax (wrap in a code fence with language "mermaid"):
+
+\`\`\`mermaid
+flowchart LR
+    classDef focal fill:#E0B96A,stroke:#E0B96A,stroke-width:2px,color:#0B0E13;
+    classDef upstream fill:#1A2230,stroke:#B5A6D8,color:#F4F4F2;
+    classDef midstream fill:#1A2230,stroke:#8FA9D8,color:#F4F4F2;
+    classDef customer fill:#1A2230,stroke:#6AA87A,color:#F4F4F2;
+
+    %% Example structure — REPLACE with ${ticker}-specific nodes/edges
+    ASML[ASML<br/>EUV Lithography] --> TSM[TSMC<br/>Foundry]
+    AMAT[AMAT<br/>Deposition] --> TSM
+    MU[Micron<br/>HBM3E Memory] --> NVDA
+    TSM --> NVDA[${ticker}<br/>${ticker} role]
+    NVDA --> MSFT[Microsoft<br/>Azure AI]
+    NVDA --> GOOGL[Google<br/>Cloud AI]
+    NVDA --> AMZN[AWS<br/>Cloud AI]
+
+    class NVDA focal
+    class ASML,AMAT,MU upstream
+    class TSM midstream
+    class MSFT,GOOGL,AMZN customer
+\`\`\`
+
+Rules for the flowchart:
+1. Replace the example NVDA placeholder with ${ticker} as the focal node.
+2. Include AT LEAST 4 upstream and 4 downstream nodes specific to ${ticker}.
+3. Edge labels must name the actual product/technology being supplied
+   (e.g. "EUV machines", "HBM3E stacks", "CoWoS-L packaging", "GPU compute",
+   "InfiniBand optics", "Liquid cooling", "Custom ASIC silicon").
+4. Use node line breaks with <br/> to keep labels readable.
+5. Apply classes: focal for ${ticker}, upstream for equipment/material, midstream
+   for foundry/packaging, customer for hyperscaler/end customer.
+6. Place the flowchart in a section called "## AI Supply Chain Position — ${ticker}"
+   immediately AFTER the Investment Thesis section.
+7. Below the flowchart, write 2-3 sentences explaining ${ticker}'s chokepoint
+   position, the most critical dependency, and the most underappreciated
+   second-order beneficiary.
+
+Do NOT skip the flowchart. It is REQUIRED for this domain.`
+    : ''
+
   return `You are the Chief Architect and lead analyst of Sidereus, a world-class institutional equity research platform.
 
 Mission: produce a differentiated, evidence-backed, hedge-fund-quality and sell-side-quality research report.
@@ -232,6 +290,7 @@ Analytical requirements:
 - For AI supply chain / semiconductors / data center companies, map customers, suppliers, competitors, revenue exposure, product dependencies, manufacturing dependencies, geographic risks, and second-order beneficiaries.
 - For biotechnology companies, analyze mechanism, trial design, endpoints, regulatory pathway, probability of success, TAM, pipeline economics, DCF/rNPV framing, and standard of care.
 - Appendix must include an evidence log and "items requiring further diligence".
+${flowchartBlock}
 
 OpenAI evidence extraction:
 ${evidenceMarkdown}
