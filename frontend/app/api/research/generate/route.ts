@@ -243,7 +243,7 @@ Return only markdown.`
 }
 
 async function callOpenAIExtraction(ticker: string, domain: string, contextMarkdown: string) {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OpenAI
   if (!apiKey) return ''
 
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
@@ -270,7 +270,7 @@ async function callOpenAIExtraction(ticker: string, domain: string, contextMarkd
 }
 
 async function callAnthropicFinal(ticker: string, domain: string, contextMarkdown: string, evidenceMarkdown: string) {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.Claude
   if (!apiKey) return null
 
   const model = process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_FAST_MODEL || 'claude-3-5-sonnet-latest'
@@ -296,7 +296,7 @@ async function callAnthropicFinal(ticker: string, domain: string, contextMarkdow
 }
 
 async function callOpenAIFinal(ticker: string, domain: string, contextMarkdown: string, evidenceMarkdown: string) {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OpenAI
   if (!apiKey) return null
 
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
