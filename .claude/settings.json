@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(pytest tests/*)",
+      "Bash(python main.py *)",
+      "Bash(python -m pytest *)",
+      "Bash(python scripts/check_secrets.py)",
+      "Bash(pip install -r requirements.txt)",
+      "Bash(pip install *)",
+      "Bash(npm run dev)",
+      "Bash(npm run build)",
+      "Bash(npm start)",
+      "Bash(npm install)",
+      "Bash(npm install *)",
+      "Bash(npx supabase gen types typescript *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git show *)"
+    ],
+    "deny": []
+  }
+}
