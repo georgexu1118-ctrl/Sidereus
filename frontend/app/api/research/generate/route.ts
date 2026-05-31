@@ -38,6 +38,9 @@ const SEC_HEADERS = {
 
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_FAST_MODEL || 'claude-3-5-sonnet-latest'
 const OPENAI_MINI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+const FAST_CONTEXT_TIMEOUT_MS = 7000
+const FAST_MANAGEMENT_TIMEOUT_MS = 2500
+const FAST_MODEL_TIMEOUT_MS = 22000
 
 function detectDomain(ticker: string, domain?: string) {
   if (domain) return domain
@@ -48,14 +51,38 @@ function detectDomain(ticker: string, domain?: string) {
   return 'Frontier Technology'
 }
 
-async function fetchJson(url: string, init?: RequestInit) {
-  const res = await fetch(url, { ...init, cache: 'no-store' })
+async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 8000) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: init?.signal ?? controller.signal,
+      cache: init?.cache ?? 'no-store',
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(fallback), timeoutMs)
+    promise
+      .then((value) => resolve(value))
+      .catch(() => resolve(fallback))
+      .finally(() => clearTimeout(timeout))
+  })
+}
+
+async function fetchJson(url: string, init?: RequestInit, timeoutMs = 8000) {
+  const res = await fetchWithTimeout(url, init, timeoutMs)
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
   return res.json()
 }
 
-async function fetchText(url: string, init?: RequestInit) {
-  const res = await fetch(url, { ...init, cache: 'no-store' })
+async function fetchText(url: string, init?: RequestInit, timeoutMs = 8000) {
+  const res = await fetchWithTimeout(url, init, timeoutMs)
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
   return res.text()
 }
@@ -125,15 +152,15 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null
     return { crumb: yfCrumbCache.crumb, cookie: yfCrumbCache.cookie }
   }
   try {
-    const cookieRes = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': YF_UA } })
+    const cookieRes = await fetchWithTimeout('https://fc.yahoo.com', { headers: { 'User-Agent': YF_UA } }, 3500)
     const setCookie =
       (cookieRes.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.().join('; ') ||
       cookieRes.headers.get('set-cookie') ||
       ''
     const cookie = setCookie.split(';')[0] || setCookie
-    const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+    const crumbRes = await fetchWithTimeout('https://query1.finance.yahoo.com/v1/test/getcrumb', {
       headers: { 'User-Agent': YF_UA, Cookie: cookie },
-    })
+    }, 3500)
     const crumb = (await crumbRes.text()).trim()
     if (!crumb || crumb.includes('<') || crumb.length > 40) return null
     yfCrumbCache = { crumb, cookie, ts: Date.now() }
@@ -149,7 +176,7 @@ async function fetchYahooQuote(ticker: string) {
     const auth = await getYahooCrumb()
     if (auth) {
       const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&crumb=${encodeURIComponent(auth.crumb)}`
-      const res = await fetch(url, { headers: { 'User-Agent': YF_UA, Cookie: auth.cookie }, cache: 'no-store' })
+      const res = await fetchWithTimeout(url, { headers: { 'User-Agent': YF_UA, Cookie: auth.cookie } }, 3500)
       if (res.ok) {
         const data = await res.json()
         const q = data?.quoteResponse?.result?.[0]
@@ -218,11 +245,11 @@ function priceFactsMarkdown(quote: Record<string, unknown> | null): string {
 }
 
 // ── arXiv: ground the Technology Masterclass in research papers ──
-async function fetchArxiv(query: string): Promise<ContextBundle['arxiv']> {
+async function fetchArxiv(query: string, timeoutMs = 5000): Promise<ContextBundle['arxiv']> {
   if (!query.trim()) return []
   try {
     const url = `http://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=4&sortBy=relevance`
-    const xml = await fetchText(url)
+    const xml = await fetchText(url, undefined, timeoutMs)
     const entries: ContextBundle['arxiv'] = []
     const entryRe = /<entry>([\s\S]*?)<\/entry>/g
     let m: RegExpExecArray | null
@@ -248,42 +275,40 @@ type ManagementProfile = {
 
 async function fetchManagementProfiles(companyName: string, ticker: string) {
   const roles = ['CEO', 'CTO', 'COO', 'CFO']
-  const profiles: ManagementProfile[] = []
-
-  for (const role of roles) {
+  const profiles = await Promise.all(roles.map(async (role): Promise<ManagementProfile | null> => {
     try {
       const q = encodeURIComponent(`site:linkedin.com/in ${companyName} ${ticker} ${role}`)
-      const html = await fetchText(`https://duckduckgo.com/html/?q=${q}`)
+      const html = await fetchText(`https://duckduckgo.com/html/?q=${q}`, undefined, 2500)
       const match = html.match(
         /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i
       )
-      if (!match) continue
+      if (!match) return null
       const url = match[1]
       const title = stripHtml(match[2])
       const snippet = stripHtml(match[3])
-      profiles.push({
+      return {
         name: title,
         role,
         linkedinUrl: url.includes('linkedin.com') ? url : undefined,
         snippet,
-      })
+      }
     } catch {
-      continue
+      return null
     }
-  }
-  return profiles
+  }))
+  return profiles.filter((profile): profile is ManagementProfile => Boolean(profile))
 }
 
-async function fetchSecContext(ticker: string): Promise<Omit<ContextBundle['sec'], never>> {
+async function fetchSecContext(ticker: string, excerptLimit = 22000): Promise<Omit<ContextBundle['sec'], never>> {
   try {
-    const tickers = await fetchJson('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS })
+    const tickers = await fetchJson('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS }, 4500)
     const match = Object.values(tickers as Record<string, { ticker: string; cik_str: number; title: string }>).find(
       (entry) => entry.ticker?.toUpperCase() === ticker
     )
     if (!match) return { filings: [] }
 
     const cik = String(match.cik_str).padStart(10, '0')
-    const submissions = await fetchJson(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: SEC_HEADERS })
+    const submissions = await fetchJson(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: SEC_HEADERS }, 4500)
     const recent = submissions?.filings?.recent
     const filings = Array.from({ length: Math.min(recent?.form?.length || 0, 40) })
       .map((_, index) => ({
@@ -304,8 +329,8 @@ async function fetchSecContext(ticker: string): Promise<Omit<ContextBundle['sec'
       const cikNoLeading = String(match.cik_str)
       const accession = String(primary.accessionNumber).replace(/-/g, '')
       filingUrl = `https://www.sec.gov/Archives/edgar/data/${cikNoLeading}/${accession}/${primary.primaryDocument}`
-      const filingText = await fetchText(filingUrl, { headers: SEC_HEADERS })
-      filingExcerpt = stripHtml(filingText).slice(0, 22000)
+      const filingText = await fetchText(filingUrl, { headers: SEC_HEADERS }, 5000)
+      filingExcerpt = stripHtml(filingText).slice(0, excerptLimit)
     }
 
     return { cik, companyName: match.title, filings, filingExcerpt, filingUrl }
@@ -314,14 +339,14 @@ async function fetchSecContext(ticker: string): Promise<Omit<ContextBundle['sec'
   }
 }
 
-async function collectContext(ticker: string, domain: string): Promise<ContextBundle> {
+async function collectContext(ticker: string, domain: string, fast = false): Promise<ContextBundle> {
   const [quote, news, sec] = await Promise.all([
     fetchYahooQuote(ticker),
     fetchYahooNews(ticker),
-    fetchSecContext(ticker),
+    fetchSecContext(ticker, fast ? 6500 : 22000),
   ])
   // arXiv query: company name + domain keywords (best-effort grounding).
-  const arxiv = await fetchArxiv(`${sec.companyName || ticker} ${domain.replace('Ecosystem', '').trim()}`)
+  const arxiv = fast ? [] : await fetchArxiv(`${sec.companyName || ticker} ${domain.replace('Ecosystem', '').trim()}`)
   return { quote, news, sec, arxiv }
 }
 
@@ -496,6 +521,51 @@ ${managementBlock}
 Return only the article in markdown.`
 }
 
+function buildFastPrompt(
+  ticker: string,
+  domain: string,
+  companyName: string,
+  priceFacts: string,
+  contextMarkdown: string,
+  managementProfiles: ManagementProfile[],
+) {
+  const managementBlock = managementProfiles.length
+    ? managementProfiles
+      .map((m) => `- Role: ${m.role}\n  Candidate: ${m.name}\n  LinkedIn: ${m.linkedinUrl || 'N/A'}\n  Snippet: ${m.snippet || 'N/A'}`)
+      .join('\n')
+    : 'No LinkedIn snippets were reliably retrieved. If uncertain, state that data is unavailable rather than inventing details.'
+
+  return `Write a fast institutional research report on ${companyName} (${ticker}) in the ${domain} domain.
+
+Use the public context below. Prioritize specificity, evidence from filings/news, and a clear investor narrative. Keep the report detailed enough to render to about 3 PDF pages, but concise enough for fast generation.
+
+Formatting rules:
+- Return only markdown.
+- Use exactly these level-2 headings, in order: Price / Share, Company Overview, Technology Masterclass, Supply Chain Analysis, Investment Analysis, Management Team.
+- Put blank lines between paragraphs.
+- Include one valid Mermaid flowchart in the Technology Masterclass or Supply Chain Analysis section using this fence format:
+\`\`\`mermaid
+flowchart LR
+  A[Input<br/>short label] --> B[Process<br/>short label]
+\`\`\`
+- Mermaid node text must not contain parentheses. Use <br/> for line breaks.
+
+Section requirements:
+- Price / Share: use only these live facts, no valuation commentary.
+${priceFacts}
+- Company Overview: business model, products, customers, positioning.
+- Technology Masterclass: explain the core technology from first principles for a generalist investor.
+- Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises.
+- Investment Analysis: flowing institutional prose covering catalysts, risks, variant perception, competitive dynamics, and what to monitor. Do not use valuation, DCF, multiples, price targets, or financial forecasts.
+- Management Team: end with CEO/CTO/COO/CFO where applicable. Include education and prior experience from the management search candidates below when available; mark uncertain details as "unverified".
+
+Management search candidates:
+${managementBlock}
+
+Public context:
+${contextMarkdown.slice(0, 14000)}`
+}
+
 function fallbackReport(ticker: string, domain: string, priceFacts: string) {
   return `## Price / Share
 ${priceFacts}
@@ -518,13 +588,16 @@ Management-team profiles (CEO/CTO/COO/CFO) are added in live generation with Lin
 }
 
 // ── LLM callers ─────────────────────────────────────────────────
-async function callAnthropic(prompt: string, maxTokens: number): Promise<string | null> {
+async function callAnthropic(prompt: string, maxTokens: number, timeoutMs = 45000): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.Claude
   if (!apiKey) return null
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      signal: controller.signal,
       body: JSON.stringify({
         model: CLAUDE_MODEL,
         max_tokens: maxTokens,
@@ -537,16 +610,21 @@ async function callAnthropic(prompt: string, maxTokens: number): Promise<string 
     return data?.content?.map((part: { text?: string }) => part.text || '').join('\n').trim() || null
   } catch {
     return null
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
-async function callOpenAI(prompt: string, system: string, maxTokens: number): Promise<string | null> {
+async function callOpenAI(prompt: string, system: string, maxTokens: number, timeoutMs = 45000): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OpenAI
   if (!apiKey) return null
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
       body: JSON.stringify({
         model: OPENAI_MINI_MODEL,
         temperature: 0.2,
@@ -562,6 +640,8 @@ async function callOpenAI(prompt: string, system: string, maxTokens: number): Pr
     return data?.choices?.[0]?.message?.content?.trim() || null
   } catch {
     return null
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -591,15 +671,50 @@ export async function POST(req: NextRequest) {
     if (!ticker) return NextResponse.json({ error: 'ticker is required' }, { status: 400 })
 
     const domain = detectDomain(ticker, body.domain)
+    const fastMode = body.fast !== false
     const backendUrl = process.env.BACKEND_API_URL
     const backendSecret = process.env.BACKEND_API_SECRET
 
     // Collect context up-front so we always have price facts.
-    const context = await collectContext(ticker, domain)
+    const emptyContext: ContextBundle = { quote: null, news: [], sec: { filings: [] }, arxiv: [] }
+    const context = await withTimeout(
+      collectContext(ticker, domain, fastMode),
+      fastMode ? FAST_CONTEXT_TIMEOUT_MS : 25000,
+      emptyContext,
+    )
     const priceFacts = priceFactsMarkdown(context.quote)
     const contextMarkdown = contextToMarkdown(context)
     const companyName = context.sec.companyName || String(context.quote?.longName || context.quote?.shortName || ticker)
-    const managementProfiles = await fetchManagementProfiles(companyName, ticker)
+    const managementProfiles = await withTimeout(
+      fetchManagementProfiles(companyName, ticker),
+      fastMode ? FAST_MANAGEMENT_TIMEOUT_MS : 9000,
+      [] as ManagementProfile[],
+    )
+
+    if (fastMode) {
+      const prompt = buildFastPrompt(ticker, domain, companyName, priceFacts, contextMarkdown, managementProfiles)
+      const fastReport =
+        await callOpenAI(
+          prompt,
+          'You are a fast institutional equity research writer. Return only markdown.',
+          6500,
+          FAST_MODEL_TIMEOUT_MS,
+        ) ||
+        await callAnthropic(prompt, 6500, FAST_MODEL_TIMEOUT_MS)
+
+      if (fastReport) {
+        return NextResponse.json({
+          status: 'ready',
+          ticker,
+          domain,
+          companyName,
+          reportMarkdown: normalizeReportMarkdown(fastReport),
+          sections: REPORT_SECTIONS,
+          provider: 'fast-single-pass',
+          generatedAt: new Date().toISOString(),
+        })
+      }
+    }
 
     // Optional Python backend proxy.
     if (backendUrl) {

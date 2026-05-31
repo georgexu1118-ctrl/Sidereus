@@ -173,7 +173,7 @@ export default function DashboardClient() {
         body: JSON.stringify({
           ticker: normalizedTicker,
           domain: domain || undefined,
-          fast: false,
+          fast: true,
         }),
       })
 
