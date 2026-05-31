@@ -412,11 +412,11 @@ B) SUPPLY CHAIN FLOWCHART - one rich, multi-branch end-to-end Mermaid map (flowc
        class A1,M1,G1,C1 customer
    \`\`\`
 
-C) MATHEMATICAL APPARATUS - 3 display equations in LaTeX using $$...$$ blocks, each followed by a 2-4 sentence explanation. Make them domain-specific:
-   - Semiconductors / AI infrastructure: throughput, bandwidth, latency, yield, power density, thermal limits, or cost-per-compute.
-   - Biotechnology: probability of technical and regulatory success, pharmacokinetics/pharmacodynamics, trial power, hazard ratios, or risk-adjusted NPV mechanics without giving a price target.
-   - Data center / infrastructure: utilization, network bisection bandwidth, energy efficiency, or capacity expansion.
-   The equations should be useful, not decorative. Define every variable.
+C) MATHEMATICAL APPARATUS - 3 display equations in LaTeX using $$...$$ blocks, each followed by a 2-4 sentence explanation. Make them domain-specific and technically advanced:
+   - Semiconductors / AI infrastructure: use first-principles models such as Arrhenius process kinetics, Gibbs-Thomson / concentration-gradient crystal growth, defect-density integrals, yield with defect clustering, thermal resistance networks, bandwidth-latency-power tradeoffs, or cost-per-compute decompositions.
+   - Biotechnology: use models such as dose-response / Emax, PK/PD exposure curves, trial power, hazard ratios, Bayesian probability of success, or risk-adjusted NPV mechanics without giving a price target.
+   - Data center / infrastructure: use models such as utilization under queueing constraints, bisection bandwidth, PUE-adjusted energy intensity, capacity expansion under power limits, or thermal load equations.
+   Do not use elementary ratio formulas such as Throughput = Total Output / Total Time or Yield = Good Units / Total Units. Use symbolic, multi-variable equations with real analytical content. Define every variable.
 
 D) TECHNOLOGY EXPLAINERS - 3 plain-language explainers (4-6 sentences each) of the hardest technical concepts, written so a generalist investor understands them.
 
@@ -427,7 +427,7 @@ F) TABLES - 1-2 GitHub-flavored markdown tables summarizing structured data (e.g
 Rules:
 - Mermaid code must be valid (no parentheses inside node text; use <br/> not \\n).
 - Mermaid node labels must not contain parentheses. Use commas or <br/> instead.
-- Equations must use standard LaTeX inside $$...$$ blocks and should render with KaTeX.
+- Equations must use standard LaTeX inside $$...$$ blocks and should render with KaTeX. Put exactly one equation per display block; do not repeat the same formula as both text and math inside the block.
 - Do not invent specific financial numbers.
 - Output only the asset pack. The diagrams will be embedded verbatim into the final article.
 
@@ -456,7 +456,8 @@ FORMATTING (critical):
 - Subsection labels inside a section may use a short bold lead-in. Do NOT pepper prose with ** or stray symbols.
 - Embed the provided Mermaid diagrams VERBATIM (copy the \`\`\`mermaid ... \`\`\` blocks exactly) into the relevant sections. Do not modify the mermaid code.
 - In Technology Breakdown only, use an academic-paper style: dense explanatory paragraphs, display equations in $$...$$ blocks, figure captions, and careful technical definitions.
-- Explain every variable immediately after each equation and state why the equation matters for the company's technology or economics.
+- Use advanced equations, not elementary operational ratios. Prefer symbolic, multi-variable models tied to the company's real technology: crystal-growth kinetics, defect-density / yield models, thermal transport, network bandwidth and latency, pharmacokinetics, trial statistics, or queueing / power-constrained capacity. Avoid simple formulas such as Throughput = Total Output / Total Time.
+- Explain every variable immediately after each equation and state why the equation matters for the company's technology or economics. Put exactly one equation in each $$...$$ block.
 - Write full paragraphs with blank lines between paragraphs. Do not hard-wrap every sentence on a separate line.
 - Leave one empty line between subsections and paragraphs.
 
@@ -467,7 +468,7 @@ Report the live figures below as a short factual paragraph (current share price 
 ${priceFacts}
 
 ## Company Overview
-What the company does, core products, business model, key customers, and industry positioning. Tight and concrete.
+What the company does, core products, business model, key customers, and industry positioning. Keep this tight enough to fit with Key Market Data on the title page of a PDF.
 
 ## Technology Breakdown
 This is the only academic-style section and it must be the deepest part of the report. Write it like a technical paper section for a generalist investor: at least 2 rendered PDF pages, with first-principles explanation, clearly defined mechanisms, display equations, figure captions, and evidence-grounded claims. Embed the engineering/system-architecture, manufacturing-process, and mechanism-sketch Mermaid diagrams from the visual pack here. Use the technology explainers, equations, and tables. Ground claims in engineering principles and, where relevant, the research literature below. Make a generalist genuinely understand how it works.
@@ -512,6 +513,7 @@ Formatting rules:
 - Use exactly these level-2 headings, in order: Key Market Data, Company Overview, Technology Breakdown, Supply Chain Analysis, Investment Analysis.
 - Put one empty line between paragraphs and subsections.
 - Make section titles bold by using level-2 markdown headings.
+- Keep Key Market Data and Company Overview concise enough to fit together on the PDF title page. Begin the deep-dive content with Technology Breakdown after those two sections.
 - Include one valid Mermaid flowchart in the Technology Breakdown or Supply Chain Analysis section using this fence format:
 \`\`\`mermaid
 flowchart LR
@@ -522,8 +524,8 @@ flowchart LR
 Section requirements:
 - Key Market Data: use only these live facts, no valuation commentary.
 ${priceFacts}
-- Company Overview: business model, products, customers, positioning.
-- Technology Breakdown: this is the only academic-style section. Make it the deepest part of the report, at least 2 rendered PDF pages, with first-principles explanation, one colored Mermaid sketch or graph, 2-3 display equations in $$...$$ blocks, figure captions, and explanations of every variable.
+- Company Overview: business model, products, customers, positioning. Keep it compact and concrete.
+- Technology Breakdown: this is the only academic-style section. Make it the deepest part of the report, at least 2 rendered PDF pages, with first-principles explanation, one colored Mermaid sketch or graph, 2-3 advanced display equations in $$...$$ blocks, figure captions, and explanations of every variable. Use multi-variable equations tied to the actual technology: crystal-growth kinetics, defect-density / yield models, thermal transport, network bandwidth and latency, pharmacokinetics, trial statistics, or queueing / power-constrained capacity. Do not use elementary ratio formulas such as Throughput = Total Output / Total Time or Yield = Good Units / Total Units.
 - Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises.
 - Investment Analysis: flowing institutional prose covering catalysts, risks, variant perception, competitive dynamics, and what to monitor. Do not use valuation, DCF, multiples, price targets, or financial forecasts.
 - Do not include a management-team section.

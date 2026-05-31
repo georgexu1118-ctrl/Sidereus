@@ -238,6 +238,15 @@ export default function DashboardClient() {
       let currentBody = createPage(0)
       Array.from(sourceBody.children).forEach((child) => {
         const clone = child.cloneNode(true) as HTMLElement
+        const headingText = clone.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || ''
+        if (
+          clone.tagName === 'H2' &&
+          headingText === 'technology breakdown' &&
+          pages.length === 1 &&
+          currentBody.children.length > 0
+        ) {
+          currentBody = createPage(pages.length)
+        }
         if (
           ['PRE', 'TABLE', 'FIGURE', 'UL', 'OL', 'BLOCKQUOTE'].includes(clone.tagName) ||
           clone.querySelector('svg, table, pre, .katex-display')
