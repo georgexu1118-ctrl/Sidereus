@@ -71,14 +71,8 @@ function markPrintBlocks(root: HTMLElement) {
   root.querySelectorAll('table, pre, figure, blockquote, ul, ol, .katex-display').forEach((element) => {
     element.classList.add('sidereus-print-avoid')
   })
-  root.querySelectorAll<HTMLElement>('[data-section-title*="supply chain"]').forEach((section) => {
-    section.querySelectorAll<HTMLElement>('[data-mermaid-chart]').forEach((chart) => {
-      chart.classList.add('sidereus-print-supply-chain-chart')
-    })
-  })
   root.querySelectorAll('svg').forEach((svg) => {
-    const chart = svg.closest('[data-mermaid-chart]') || svg.closest('div')
-    chart?.classList.add('sidereus-print-chart', 'sidereus-print-avoid')
+    svg.closest('div')?.classList.add('sidereus-print-chart', 'sidereus-print-avoid')
   })
 }
 
@@ -210,7 +204,6 @@ function MermaidBlock({ chart }: { chart: string }) {
 
   return (
     <div
-      data-mermaid-chart
       className="overflow-x-auto rounded-md border border-black/10 bg-white p-3"
       dangerouslySetInnerHTML={{ __html: svg }}
     />

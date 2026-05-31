@@ -385,13 +385,11 @@ A) TECHNOLOGY DIAGRAMS - 3 Mermaid diagrams that explain how the core technology
 B) SUPPLY CHAIN FLOWCHART - one rich, multi-branch end-to-end Mermaid map (flowchart LR),
    modelled on a professional analyst's supply-chain map: ${ticker} sits on the left and
    FANS OUT through named intermediaries to many downstream end customers.
-   - Keep this diagram compact enough to print in the top half of one A4/PDF page.
    - Use $TICKER notation for public companies (e.g. $NVDA, $AMZN, $MSFT, $GOOGL, $AVGO).
    - Group related paths into labelled subgraph clusters (one per key intermediary/partner),
      each showing that intermediary then its specific downstream customers.
-   - Show 3-4 distinct parallel branches / customer sets, e.g.
+   - Show at least 4-6 distinct parallel branches / customer sets, e.g.
      ${ticker} --> $PARTNER --> {several hyperscalers / OEMs / cloud providers}.
-   - Limit the full map to roughly 10-14 total nodes and use short labels.
    - Name real companies where known (Microsoft, AWS, Google, Meta, Tencent, Baidu, ByteDance,
      Alibaba, plus integrators/partners specific to ${ticker}'s industry).
    - Highlight ${ticker}'s own nodes with: classDef focal fill:#B5A6D8,stroke:#161310,color:#161310,font-weight:bold;
@@ -476,7 +474,7 @@ What the company does, core products, business model, key customers, and industr
 This is the only academic-style section and it must be the deepest part of the report. Write it like a technical paper section for a generalist investor: at least 2 rendered PDF pages, with first-principles explanation, clearly defined mechanisms, display equations, figure captions, and evidence-grounded claims. Embed the engineering/system-architecture, manufacturing-process, and mechanism-sketch Mermaid diagrams from the visual pack here. Use the technology explainers, equations, and tables. Ground claims in engineering principles and, where relevant, the research literature below. Make a generalist genuinely understand how it works.
 
 ## Supply Chain Analysis
-Embed the end-to-end supply-chain Mermaid flowchart from the visual pack, but keep the diagram compact enough to occupy no more than roughly half a printed PDF page. Walk the chain node by node (upstream suppliers, manufacturing partners, distribution, end customers, dependencies, bottlenecks). For each node explain the economics, the competitive landscape, the key players, and the strategic importance. Use the supply-chain table if provided.
+Embed the end-to-end supply-chain Mermaid flowchart from the visual pack. Walk the chain node by node (upstream suppliers, manufacturing partners, distribution, end customers, dependencies, bottlenecks). For each node explain the economics, the competitive landscape, the key players, and the strategic importance. Use the supply-chain table if provided.
 
 ## Investment Analysis
 Write as ONE flowing institutional article — NOT a list. Do NOT use separate headings or labels for catalysts, risks, variant perception, or monitoring factors. Integrate all of them naturally into the prose: competitive positioning, industry dynamics, supply-demand trends, technology roadmap, customer adoption, strategic advantages, emerging risks, the variant perception (where you differ from consensus and why), and what to monitor going forward. Evidence-driven and thesis-oriented throughout.
@@ -522,7 +520,6 @@ flowchart LR
   A[Input<br/>short label] --> B[Process<br/>short label]
 \`\`\`
 - Mermaid node text must not contain parentheses. Use <br/> for line breaks.
-- If the Mermaid flowchart is in Supply Chain Analysis, keep it compact enough to print in half a PDF page: roughly 10-14 nodes, 3-4 branches, and short labels.
 
 Section requirements:
 - Key Market Data: use only these live facts, no valuation commentary.
