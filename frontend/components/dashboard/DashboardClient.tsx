@@ -35,6 +35,23 @@ function extractTitle(markdown: string, ticker: string) {
   return firstHeading?.replace(/^#\s+/, '') || `${ticker} Research Report`
 }
 
+function normalizeMermaidSource(raw: string) {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  if (trimmed.toLowerCase().startsWith('mermaid\n')) {
+    return trimmed.slice('mermaid\n'.length).trim()
+  }
+  return trimmed
+}
+
+function isLikelyMermaid(raw: string) {
+  const source = normalizeMermaidSource(raw)
+  if (!source) return false
+  return /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph)\b/m.test(
+    source
+  )
+}
+
 function MermaidBlock({ chart }: { chart: string }) {
   const [svg, setSvg] = useState('')
   const [error, setError] = useState('')
@@ -313,8 +330,11 @@ export default function DashboardClient() {
                         code({ className, children, ...props }) {
                           const language = /language-(\w+)/.exec(className || '')?.[1]
                           const codeText = String(children).replace(/\n$/, '')
-                          if (language === 'mermaid') {
-                            return <MermaidBlock chart={codeText} />
+                          const normalized = normalizeMermaidSource(codeText)
+                          const shouldRenderMermaid =
+                            language === 'mermaid' || (!language && isLikelyMermaid(codeText))
+                          if (shouldRenderMermaid && normalized) {
+                            return <MermaidBlock chart={normalized} />
                           }
                           return (
                             <code className={className} {...props}>
