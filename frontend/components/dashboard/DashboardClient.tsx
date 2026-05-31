@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, FileText, Loader2, Send, ShieldCheck } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 
@@ -129,7 +131,7 @@ export default function DashboardClient() {
       const pdfHeight = pdf.internal.pageSize.getHeight()
       const pageWidthPx = 794
       const pageHeightPx = 1123
-      const marginPx = 72
+      const marginPx = 96
       const footerPx = 36
       const sourceBody = reportRef.current.querySelector('[data-report-body]')
       if (!sourceBody) throw new Error('Report body missing')
@@ -151,13 +153,17 @@ export default function DashboardClient() {
         .pdf-meta { margin: 0 0 18px; border-bottom: 1px solid #000; padding-bottom: 8px; font-size: 11px; letter-spacing: 0; text-transform: uppercase; }
         .pdf-body { height: 100%; overflow: hidden; }
         .pdf-body h1, .pdf-body h2, .pdf-body h3 { margin: 20px 0 10px; font-weight: 700; line-height: 1.25; }
-        .pdf-body h2 { font-size: 17px; }
-        .pdf-body h3 { font-size: 15px; }
-        .pdf-body p { margin: 0 0 14px; font-size: 14px; line-height: 1.42; text-align: left; }
-        .pdf-body ul, .pdf-body ol { margin: 0 0 14px 20px; padding: 0; font-size: 14px; line-height: 1.42; }
+        .pdf-body h2 { font-size: 18px; }
+        .pdf-body h3 { font-size: 16px; }
+        .pdf-body p { margin: 0 0 18px; font-size: 16px; line-height: 1.5; text-align: left; }
+        .pdf-body ul, .pdf-body ol { margin: 0 0 18px 20px; padding: 0; font-size: 16px; line-height: 1.5; }
         .pdf-body table { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 12px; }
         .pdf-body th, .pdf-body td { border: 1px solid #000; padding: 5px; vertical-align: top; }
         .pdf-body pre { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid #000; padding: 8px; font-size: 10px; }
+        .pdf-body .katex-display { margin: 18px 0; overflow: hidden; text-align: center; }
+        .pdf-body .katex { font-size: 1.05em; }
+        .pdf-body figure { margin: 18px 0; }
+        .pdf-body figcaption { margin-top: 6px; font-size: 12px; line-height: 1.35; text-align: center; }
         .pdf-body svg { max-width: 100%; height: auto; }
         .pdf-block { break-inside: avoid; page-break-inside: avoid; }
         .pdf-footer { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; font-size: 12px; }
@@ -197,6 +203,9 @@ export default function DashboardClient() {
       Array.from(sourceBody.children).forEach((child) => {
         const clone = child.cloneNode(true) as HTMLElement
         clone.classList.add('pdf-block')
+        if (clone.tagName === 'H2' && currentBody.children.length > 0) {
+          currentBody = createPage(pages.length)
+        }
         currentBody.appendChild(clone)
         if (currentBody.scrollHeight > currentBody.clientHeight && currentBody.children.length > 1) {
           currentBody.removeChild(clone)
@@ -378,7 +387,11 @@ export default function DashboardClient() {
               )}
 
               {report && (
-                <article ref={reportRef} className="max-w-3xl rounded-sm border border-black/10 bg-white px-8 py-8 font-serif text-black shadow-none">
+                <article
+                  ref={reportRef}
+                  className="max-w-3xl rounded-sm border border-black/10 bg-white px-8 py-8 text-black shadow-none"
+                  style={{ fontFamily: '"Times New Roman", Times, serif' }}
+                >
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-3">
                     <div>
                       <p className="text-xs uppercase text-black/55">{report.domain || 'Equity Research'}</p>
@@ -394,9 +407,10 @@ export default function DashboardClient() {
                       {isExportingPdf ? 'Exporting...' : 'PDF'}
                     </button>
                   </div>
-                  <div data-report-body className="prose prose-sm max-w-none leading-7 prose-headings:mt-8 prose-headings:mb-4 prose-headings:font-bold prose-headings:text-black prose-p:my-5 prose-p:text-black prose-li:my-1 prose-li:text-black prose-strong:text-black prose-pre:my-6 prose-pre:rounded-sm prose-pre:border prose-pre:border-black/20 prose-pre:bg-white prose-pre:text-black">
+                  <div data-report-body className="prose prose-base max-w-none leading-[1.5] prose-headings:mt-8 prose-headings:mb-4 prose-headings:font-bold prose-headings:text-black prose-p:my-5 prose-p:text-black prose-li:my-1 prose-li:text-black prose-strong:text-black prose-figure:my-7 prose-figcaption:text-center prose-figcaption:text-xs prose-pre:my-6 prose-pre:rounded-sm prose-pre:border prose-pre:border-black/20 prose-pre:bg-white prose-pre:text-black">
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
+                      remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+                      rehypePlugins={[rehypeKatex]}
                       components={{
                         code({ className, children, ...props }) {
                           const language = /language-(\w+)/.exec(className || '')?.[1]

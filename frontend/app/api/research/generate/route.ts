@@ -23,7 +23,7 @@ type ContextBundle = {
 
 // New report structure — narrative-first, no valuation, no conclusion.
 const REPORT_SECTIONS = [
-  'Price / Share',
+  'Key Market Data',
   'Company Overview',
   'Technology Breakdown',
   'Supply Chain Analysis',
@@ -86,9 +86,13 @@ async function fetchText(url: string, init?: RequestInit, timeoutMs = 8000) {
 }
 
 function normalizeReportMarkdown(markdown: string) {
-  const parts = markdown.split(/(```[\s\S]*?```)/g)
+  const normalizedHeadings = markdown
+    .replace(/##\s*Price\s*\/\s*Share/gi, '## Key Market Data')
+    .replace(/##\s*Technology\s+Masterclass/gi, '## Technology Breakdown')
+    .replace(/##\s*Management\s+Team[\s\S]*$/gi, '')
+  const parts = normalizedHeadings.split(/(```[\s\S]*?```|\$\$[\s\S]*?\$\$)/g)
   const normalized = parts.map((part) => {
-    if (part.startsWith('```')) return part
+    if (part.startsWith('```') || part.startsWith('$$')) return part
     const lines = part.split('\n')
     const out: string[] = []
     let paragraph: string[] = []
@@ -363,21 +367,22 @@ ${contextMarkdown}`
 
 // STEP 2 — GPT-4o Mini: turn facts into diagrams, flowcharts, explainers, tables.
 function buildVisualsPrompt(ticker: string, domain: string, factsMarkdown: string) {
-  return `You are the technical illustration and diagram layer of Sidereus. Using the extracted facts below for ${ticker}, produce a VISUAL ASSET PACK in markdown. Be technically accurate and educational (university-lecture clarity for non-experts).
+  return `You are the technical illustration and academic apparatus layer of Sidereus. Using the extracted facts below for ${ticker}, produce a VISUAL ASSET PACK in markdown. Be technically accurate, visually rich, and educational with the rigor of a graduate-level technical appendix.
 
 Produce these assets, each clearly labelled:
 
-A) TECHNOLOGY DIAGRAMS — 2 to 3 Mermaid diagrams that explain how the core technology works:
+A) TECHNOLOGY DIAGRAMS - 3 Mermaid diagrams that explain how the core technology works:
    - An engineering / system-architecture diagram (flowchart LR or TB)
    - A manufacturing-process diagram (flowchart showing process steps)
+   - A mechanism sketch / physics sketch / molecular-pathway sketch, depending on the company domain
    Use this fence format exactly:
    \`\`\`mermaid
    flowchart LR
        A[Component<br/>detail] --> B[Next stage<br/>detail]
    \`\`\`
-   Keep node labels short, use <br/> for line breaks, label edges with the real interface/material.
+   Keep node labels short, use <br/> for line breaks, label edges with the real interface/material. Add color classDef rules for at least three node classes (focal, dependency, customer or biology/compute/material) so the diagrams resemble polished academic figures.
 
-B) SUPPLY CHAIN FLOWCHART — one rich, multi-branch end-to-end Mermaid map (flowchart LR),
+B) SUPPLY CHAIN FLOWCHART - one rich, multi-branch end-to-end Mermaid map (flowchart LR),
    modelled on a professional analyst's supply-chain map: ${ticker} sits on the left and
    FANS OUT through named intermediaries to many downstream end customers.
    - Use $TICKER notation for public companies (e.g. $NVDA, $AMZN, $MSFT, $GOOGL, $AVGO).
@@ -392,6 +397,8 @@ B) SUPPLY CHAIN FLOWCHART — one rich, multi-branch end-to-end Mermaid map (flo
    \`\`\`mermaid
    flowchart LR
        classDef focal fill:#B5A6D8,stroke:#161310,color:#161310,font-weight:bold;
+       classDef dependency fill:#D9E8F5,stroke:#315C7A,color:#10202A;
+       classDef customer fill:#F8D7A6,stroke:#946B22,color:#221609;
        subgraph BM[To Broad Market]
          T1[$TICKER] --> P1[$PARTNER] --> A1[$AMZN]
          P1 --> M1[$MSFT]
@@ -401,14 +408,26 @@ B) SUPPLY CHAIN FLOWCHART — one rich, multi-branch end-to-end Mermaid map (flo
          T2[$TICKER] --> P2[Integrator] --> C1[Cloud]
        end
        class T1,T2 focal
+       class P1,P2 dependency
+       class A1,M1,G1,C1 customer
    \`\`\`
 
-C) TECHNOLOGY EXPLAINERS — 2 short plain-language explainers (3-5 sentences each) of the hardest technical concepts, written so a generalist investor understands them.
+C) MATHEMATICAL APPARATUS - 3 display equations in LaTeX using $$...$$ blocks, each followed by a 2-4 sentence explanation. Make them domain-specific:
+   - Semiconductors / AI infrastructure: throughput, bandwidth, latency, yield, power density, thermal limits, or cost-per-compute.
+   - Biotechnology: probability of technical and regulatory success, pharmacokinetics/pharmacodynamics, trial power, hazard ratios, or risk-adjusted NPV mechanics without giving a price target.
+   - Data center / infrastructure: utilization, network bisection bandwidth, energy efficiency, or capacity expansion.
+   The equations should be useful, not decorative. Define every variable.
 
-D) TABLES — 1-2 GitHub-flavored markdown tables summarizing structured data (e.g. product specs, supply-chain nodes with economics/key players, or competitive comparison).
+D) TECHNOLOGY EXPLAINERS - 3 plain-language explainers (4-6 sentences each) of the hardest technical concepts, written so a generalist investor understands them.
+
+E) FIGURE CAPTIONS - after each Mermaid diagram, add an italic caption beginning with "Figure:" that explains what the figure shows and why it matters to investors.
+
+F) TABLES - 1-2 GitHub-flavored markdown tables summarizing structured data (e.g. product specs, supply-chain nodes with economics/key players, or competitive comparison).
 
 Rules:
 - Mermaid code must be valid (no parentheses inside node text; use <br/> not \\n).
+- Mermaid node labels must not contain parentheses. Use commas or <br/> instead.
+- Equations must use standard LaTeX inside $$...$$ blocks and should render with KaTeX.
 - Do not invent specific financial numbers.
 - Output only the asset pack. The diagrams will be embedded verbatim into the final article.
 
@@ -430,26 +449,28 @@ function buildFinalPrompt(
     : 'No specific papers retrieved; ground technology claims in established engineering principles.'
   return `You are the lead analyst at Sidereus writing the final institutional research article on ${ticker} (${domain}).
 
-Write in the voice of elite independent buy-side research (Citrini Research, Aleabitoreddit's OSINT supply-chain deep dives, SemiconSam's semiconductor depth): analytical, evidence-driven, thesis-oriented, industry-focused. No marketing language. No bullet-point dumping in the investment section.
+Write in the voice of elite independent buy-side research (Citrini Research, Aleabitoreddit's OSINT supply-chain deep dives, SemiconSam's semiconductor depth): analytical, evidence-driven, thesis-oriented, industry-focused. Only the Technology Breakdown section should use a more academic paper style with equations, figure captions, and technical exposition. No marketing language. No bullet-point dumping in the investment section.
 
 FORMATTING (critical):
 - Each section title is a level-2 markdown heading: "## Title"; section titles must render as bold.
 - Subsection labels inside a section may use a short bold lead-in. Do NOT pepper prose with ** or stray symbols.
 - Embed the provided Mermaid diagrams VERBATIM (copy the \`\`\`mermaid ... \`\`\` blocks exactly) into the relevant sections. Do not modify the mermaid code.
+- In Technology Breakdown only, use an academic-paper style: dense explanatory paragraphs, display equations in $$...$$ blocks, figure captions, and careful technical definitions.
+- Explain every variable immediately after each equation and state why the equation matters for the company's technology or economics.
 - Write full paragraphs with blank lines between paragraphs. Do not hard-wrap every sentence on a separate line.
 - Leave one empty line between subsections and paragraphs.
 
 WRITE EXACTLY THESE SECTIONS, IN ORDER:
 
-## Price / Share
-Report the live figures below as a short factual paragraph (current share price and market capitalization). Nothing else — no valuation commentary, no enterprise value.
+## Key Market Data
+Report the live figures below as a short factual paragraph (current share price and market capitalization). Nothing else - no valuation commentary, no enterprise value.
 ${priceFacts}
 
 ## Company Overview
 What the company does, core products, business model, key customers, and industry positioning. Tight and concrete.
 
 ## Technology Breakdown
-Explain the technology from first principles, like a university lecture. Embed the engineering/system-architecture and manufacturing-process Mermaid diagrams from the visual pack here. Use the technology explainers and tables. Ground claims in engineering principles and, where relevant, the research literature below. Make a generalist genuinely understand how it works.
+This is the only academic-style section and it must be the deepest part of the report. Write it like a technical paper section for a generalist investor: at least 2 rendered PDF pages, with first-principles explanation, clearly defined mechanisms, display equations, figure captions, and evidence-grounded claims. Embed the engineering/system-architecture, manufacturing-process, and mechanism-sketch Mermaid diagrams from the visual pack here. Use the technology explainers, equations, and tables. Ground claims in engineering principles and, where relevant, the research literature below. Make a generalist genuinely understand how it works.
 
 ## Supply Chain Analysis
 Embed the end-to-end supply-chain Mermaid flowchart from the visual pack. Walk the chain node by node (upstream suppliers, manufacturing partners, distribution, end customers, dependencies, bottlenecks). For each node explain the economics, the competitive landscape, the key players, and the strategic importance. Use the supply-chain table if provided.
@@ -461,7 +482,7 @@ HARD CONSTRAINTS:
 - NO financial modeling: do not discuss valuation, price targets, DCF, multiples, margins, or financial forecasts anywhere.
 - NO management-team section.
 - NO conclusion / summary section. End naturally after the Investment Analysis section.
-- Target length: a substantial deep-dive aimed at roughly 2,200-3,000 words so rendered PDF output is at least 3 pages. Do not be brief.
+- Target length: a substantial deep-dive aimed at roughly 3,200-4,200 words so rendered PDF output is at least 4 pages. Do not be brief. Keep the academic style concentrated in Technology Breakdown; keep the other sections institutional and readable.
 
 Research papers for grounding the technology section:
 ${arxivBlock}
@@ -484,11 +505,11 @@ function buildFastPrompt(
 ) {
   return `Write a fast institutional research report on ${companyName} (${ticker}) in the ${domain} domain.
 
-Use the public context below. Prioritize specificity, evidence from filings/news, and a clear investor narrative. The report must render to at least 3 PDF pages.
+Use the public context below. Prioritize specificity, evidence from filings/news, and a clear investor narrative. The report must render to at least 4 PDF pages.
 
 Formatting rules:
 - Return only markdown.
-- Use exactly these level-2 headings, in order: Price / Share, Company Overview, Technology Breakdown, Supply Chain Analysis, Investment Analysis.
+- Use exactly these level-2 headings, in order: Key Market Data, Company Overview, Technology Breakdown, Supply Chain Analysis, Investment Analysis.
 - Put one empty line between paragraphs and subsections.
 - Make section titles bold by using level-2 markdown headings.
 - Include one valid Mermaid flowchart in the Technology Breakdown or Supply Chain Analysis section using this fence format:
@@ -499,21 +520,21 @@ flowchart LR
 - Mermaid node text must not contain parentheses. Use <br/> for line breaks.
 
 Section requirements:
-- Price / Share: use only these live facts, no valuation commentary.
+- Key Market Data: use only these live facts, no valuation commentary.
 ${priceFacts}
 - Company Overview: business model, products, customers, positioning.
-- Technology Breakdown: explain the core technology from first principles for a generalist investor.
+- Technology Breakdown: this is the only academic-style section. Make it the deepest part of the report, at least 2 rendered PDF pages, with first-principles explanation, one colored Mermaid sketch or graph, 2-3 display equations in $$...$$ blocks, figure captions, and explanations of every variable.
 - Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises.
 - Investment Analysis: flowing institutional prose covering catalysts, risks, variant perception, competitive dynamics, and what to monitor. Do not use valuation, DCF, multiples, price targets, or financial forecasts.
 - Do not include a management-team section.
-- Target length: roughly 2,200-3,000 words.
+- Target length: roughly 3,000-3,800 words so the rendered PDF is at least 4 pages; keep the academic writing style concentrated in Technology Breakdown.
 
 Public context:
 ${contextMarkdown.slice(0, 14000)}`
 }
 
 function fallbackReport(ticker: string, domain: string, priceFacts: string) {
-  return `## Price / Share
+  return `## Key Market Data
 ${priceFacts}
 
 ## Company Overview
