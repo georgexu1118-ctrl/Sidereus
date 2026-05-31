@@ -160,8 +160,11 @@ export default function DashboardClient() {
         .pdf-body table { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 12px; }
         .pdf-body th, .pdf-body td { border: 1px solid #000; padding: 5px; vertical-align: top; }
         .pdf-body pre { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid #000; padding: 8px; font-size: 10px; }
-        .pdf-body .katex-display { margin: 18px 0; overflow: hidden; text-align: center; }
-        .pdf-body .katex { font-size: 1.05em; }
+        .pdf-body .katex-display { display: block; margin: 18px 0 22px; padding: 8px 0 10px; overflow: visible !important; text-align: center; }
+        .pdf-body .katex,
+        .pdf-body .katex * { line-height: normal !important; overflow: visible !important; }
+        .pdf-body .katex { display: inline-block; max-width: 100%; font-size: 1.05em; white-space: normal; }
+        .pdf-body .katex-html { overflow: visible !important; }
         .pdf-body figure { margin: 18px 0; }
         .pdf-body figcaption { margin-top: 6px; font-size: 12px; line-height: 1.35; text-align: center; }
         .pdf-body svg { max-width: 100%; height: auto; }
@@ -203,7 +206,8 @@ export default function DashboardClient() {
       Array.from(sourceBody.children).forEach((child) => {
         const clone = child.cloneNode(true) as HTMLElement
         clone.classList.add('pdf-block')
-        if (clone.tagName === 'H2' && currentBody.children.length > 0) {
+        const remainingHeight = currentBody.clientHeight - currentBody.scrollHeight
+        if (clone.tagName === 'H2' && currentBody.children.length > 0 && remainingHeight < 160) {
           currentBody = createPage(pages.length)
         }
         currentBody.appendChild(clone)
