@@ -183,9 +183,23 @@
 
   .sidereus-print-body figure,
   .sidereus-print-chart {
-    margin: 9pt 0 12pt !important;
+    background: #fff !important;
+    border: 0.75pt solid #000 !important;
+    margin: 8pt 0 10pt !important;
     max-width: 100% !important;
-    overflow: visible !important;
+    overflow: hidden !important;
+    padding: 5pt !important;
+  }
+
+  .sidereus-print-chart {
+    max-height: 5in !important;
+  }
+
+  .sidereus-print-supply-chain-chart {
+    break-before: avoid !important;
+    page-break-before: avoid !important;
+    max-height: 3.6in !important;
+    overflow: hidden !important;
   }
 
   .sidereus-print-body figcaption {
@@ -201,6 +215,18 @@
     height: auto !important;
     margin: 0 auto !important;
     max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .sidereus-print-chart svg {
+    max-height: 4.7in !important;
+  }
+
+  .sidereus-print-supply-chain-chart svg {
+    width: auto !important;
+    height: auto !important;
+    max-width: 100% !important;
+    max-height: 3.4in !important;
   }
 
   .sidereus-print-body .katex-display {
