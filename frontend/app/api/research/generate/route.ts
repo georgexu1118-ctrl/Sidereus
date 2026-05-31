@@ -25,10 +25,9 @@ type ContextBundle = {
 const REPORT_SECTIONS = [
   'Price / Share',
   'Company Overview',
-  'Technology Masterclass',
+  'Technology Breakdown',
   'Supply Chain Analysis',
   'Investment Analysis',
-  'Management Team',
 ]
 
 const SEC_HEADERS = {
@@ -39,7 +38,6 @@ const SEC_HEADERS = {
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_FAST_MODEL || 'claude-3-5-sonnet-latest'
 const OPENAI_MINI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 const FAST_CONTEXT_TIMEOUT_MS = 5000
-const FAST_MANAGEMENT_TIMEOUT_MS = 1500
 const FAST_MODEL_TIMEOUT_MS = 21000
 
 function detectDomain(ticker: string, domain?: string) {
@@ -244,7 +242,7 @@ function priceFactsMarkdown(quote: Record<string, unknown> | null): string {
   return lines.join('\n')
 }
 
-// ── arXiv: ground the Technology Masterclass in research papers ──
+// ── arXiv: ground the Technology Breakdown in research papers ──
 async function fetchArxiv(query: string, timeoutMs = 5000): Promise<ContextBundle['arxiv']> {
   if (!query.trim()) return []
   try {
@@ -264,39 +262,6 @@ async function fetchArxiv(query: string, timeoutMs = 5000): Promise<ContextBundl
   } catch {
     return []
   }
-}
-
-type ManagementProfile = {
-  name: string
-  role: string
-  linkedinUrl?: string
-  snippet?: string
-}
-
-async function fetchManagementProfiles(companyName: string, ticker: string) {
-  const roles = ['CEO', 'CTO', 'COO', 'CFO']
-  const profiles = await Promise.all(roles.map(async (role): Promise<ManagementProfile | null> => {
-    try {
-      const q = encodeURIComponent(`site:linkedin.com/in ${companyName} ${ticker} ${role}`)
-      const html = await fetchText(`https://duckduckgo.com/html/?q=${q}`, undefined, 2500)
-      const match = html.match(
-        /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i
-      )
-      if (!match) return null
-      const url = match[1]
-      const title = stripHtml(match[2])
-      const snippet = stripHtml(match[3])
-      return {
-        name: title,
-        role,
-        linkedinUrl: url.includes('linkedin.com') ? url : undefined,
-        snippet,
-      }
-    } catch {
-      return null
-    }
-  }))
-  return profiles.filter((profile): profile is ManagementProfile => Boolean(profile))
 }
 
 async function fetchSecContext(ticker: string, excerptLimit = 22000): Promise<Omit<ContextBundle['sec'], never>> {
@@ -459,26 +424,20 @@ function buildFinalPrompt(
   factsMarkdown: string,
   visualsMarkdown: string,
   arxiv: ContextBundle['arxiv'],
-  managementProfiles: ManagementProfile[],
 ) {
   const arxivBlock = arxiv.length
     ? arxiv.map((p) => `- ${p.title} — ${p.url}`).join('\n')
     : 'No specific papers retrieved; ground technology claims in established engineering principles.'
-  const managementBlock = managementProfiles.length
-    ? managementProfiles
-      .map((m) => `- Role: ${m.role}\n  Candidate: ${m.name}\n  LinkedIn: ${m.linkedinUrl || 'N/A'}\n  Snippet: ${m.snippet || 'N/A'}`)
-      .join('\n')
-    : 'No LinkedIn snippets were reliably retrieved. If uncertain, state that data is unavailable rather than inventing details.'
-
   return `You are the lead analyst at Sidereus writing the final institutional research article on ${ticker} (${domain}).
 
 Write in the voice of elite independent buy-side research (Citrini Research, Aleabitoreddit's OSINT supply-chain deep dives, SemiconSam's semiconductor depth): analytical, evidence-driven, thesis-oriented, industry-focused. No marketing language. No bullet-point dumping in the investment section.
 
 FORMATTING (critical):
-- Each section title is a level-2 markdown heading: "## Title". The app renders these as bold subtitles.
+- Each section title is a level-2 markdown heading: "## Title"; section titles must render as bold.
 - Subsection labels inside a section may use a short bold lead-in. Do NOT pepper prose with ** or stray symbols.
 - Embed the provided Mermaid diagrams VERBATIM (copy the \`\`\`mermaid ... \`\`\` blocks exactly) into the relevant sections. Do not modify the mermaid code.
 - Write full paragraphs with blank lines between paragraphs. Do not hard-wrap every sentence on a separate line.
+- Leave one empty line between subsections and paragraphs.
 
 WRITE EXACTLY THESE SECTIONS, IN ORDER:
 
@@ -489,7 +448,7 @@ ${priceFacts}
 ## Company Overview
 What the company does, core products, business model, key customers, and industry positioning. Tight and concrete.
 
-## Technology Masterclass
+## Technology Breakdown
 Explain the technology from first principles, like a university lecture. Embed the engineering/system-architecture and manufacturing-process Mermaid diagrams from the visual pack here. Use the technology explainers and tables. Ground claims in engineering principles and, where relevant, the research literature below. Make a generalist genuinely understand how it works.
 
 ## Supply Chain Analysis
@@ -498,13 +457,11 @@ Embed the end-to-end supply-chain Mermaid flowchart from the visual pack. Walk t
 ## Investment Analysis
 Write as ONE flowing institutional article — NOT a list. Do NOT use separate headings or labels for catalysts, risks, variant perception, or monitoring factors. Integrate all of them naturally into the prose: competitive positioning, industry dynamics, supply-demand trends, technology roadmap, customer adoption, strategic advantages, emerging risks, the variant perception (where you differ from consensus and why), and what to monitor going forward. Evidence-driven and thesis-oriented throughout.
 
-## Management Team
-End the report with a management-team section. Cover key executives (CEO, CTO, COO, CFO where applicable), and for each provide a concise profile: education, prior operating experience, and relevance to current strategy. Use the LinkedIn candidate data below plus filing context. If a datapoint is unverified, explicitly label it as "unverified" instead of guessing.
-
 HARD CONSTRAINTS:
 - NO financial modeling: do not discuss valuation, price targets, DCF, multiples, margins, or financial forecasts anywhere.
-- NO conclusion / summary section. End naturally after the Management Team section.
-- Target length: a substantial deep-dive aimed at roughly 1,800-2,800 words so rendered PDF output is typically about 3 pages. Do not be brief.
+- NO management-team section.
+- NO conclusion / summary section. End naturally after the Investment Analysis section.
+- Target length: a substantial deep-dive aimed at roughly 2,200-3,000 words so rendered PDF output is at least 3 pages. Do not be brief.
 
 Research papers for grounding the technology section:
 ${arxivBlock}
@@ -515,9 +472,6 @@ ${factsMarkdown}
 Visual asset pack (embed the mermaid diagrams verbatim, use the explainers/tables):
 ${visualsMarkdown}
 
-LinkedIn management search candidates:
-${managementBlock}
-
 Return only the article in markdown.`
 }
 
@@ -527,23 +481,17 @@ function buildFastPrompt(
   companyName: string,
   priceFacts: string,
   contextMarkdown: string,
-  managementProfiles: ManagementProfile[],
 ) {
-  const managementBlock = managementProfiles.length
-    ? managementProfiles
-      .map((m) => `- Role: ${m.role}\n  Candidate: ${m.name}\n  LinkedIn: ${m.linkedinUrl || 'N/A'}\n  Snippet: ${m.snippet || 'N/A'}`)
-      .join('\n')
-    : 'No LinkedIn snippets were reliably retrieved. If uncertain, state that data is unavailable rather than inventing details.'
-
   return `Write a fast institutional research report on ${companyName} (${ticker}) in the ${domain} domain.
 
-Use the public context below. Prioritize specificity, evidence from filings/news, and a clear investor narrative. Keep the report detailed enough to render to about 3 PDF pages, but concise enough for fast generation.
+Use the public context below. Prioritize specificity, evidence from filings/news, and a clear investor narrative. The report must render to at least 3 PDF pages.
 
 Formatting rules:
 - Return only markdown.
-- Use exactly these level-2 headings, in order: Price / Share, Company Overview, Technology Masterclass, Supply Chain Analysis, Investment Analysis, Management Team.
-- Put blank lines between paragraphs.
-- Include one valid Mermaid flowchart in the Technology Masterclass or Supply Chain Analysis section using this fence format:
+- Use exactly these level-2 headings, in order: Price / Share, Company Overview, Technology Breakdown, Supply Chain Analysis, Investment Analysis.
+- Put one empty line between paragraphs and subsections.
+- Make section titles bold by using level-2 markdown headings.
+- Include one valid Mermaid flowchart in the Technology Breakdown or Supply Chain Analysis section using this fence format:
 \`\`\`mermaid
 flowchart LR
   A[Input<br/>short label] --> B[Process<br/>short label]
@@ -554,13 +502,11 @@ Section requirements:
 - Price / Share: use only these live facts, no valuation commentary.
 ${priceFacts}
 - Company Overview: business model, products, customers, positioning.
-- Technology Masterclass: explain the core technology from first principles for a generalist investor.
+- Technology Breakdown: explain the core technology from first principles for a generalist investor.
 - Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises.
 - Investment Analysis: flowing institutional prose covering catalysts, risks, variant perception, competitive dynamics, and what to monitor. Do not use valuation, DCF, multiples, price targets, or financial forecasts.
-- Management Team: end with CEO/CTO/COO/CFO where applicable. Include education and prior experience from the management search candidates below when available; mark uncertain details as "unverified".
-
-Management search candidates:
-${managementBlock}
+- Do not include a management-team section.
+- Target length: roughly 2,200-3,000 words.
 
 Public context:
 ${contextMarkdown.slice(0, 14000)}`
@@ -573,7 +519,7 @@ ${priceFacts}
 ## Company Overview
 Sidereus is configured for a multi-model deep dive on ${ticker} (${domain}), but no live LLM provider is available in this environment yet.
 
-## Technology Masterclass
+## Technology Breakdown
 The production pipeline uses Claude Sonnet to read SEC filings (10-K, 10-Q, S-1, 8-K) and extract technology, manufacturing, and supply-chain facts; GPT-4o-mini to render Mermaid diagrams, technology explainers, and tables; then Claude Sonnet to write this institutional article.
 
 ## Supply Chain Analysis
@@ -582,8 +528,6 @@ Set server-side ANTHROPIC_API_KEY and OPENAI_API_KEY in Vercel environment varia
 ## Investment Analysis
 Once keys are configured, this section becomes a flowing institutional narrative integrating competitive positioning, industry dynamics, technology roadmap, emerging risks, variant perception, and monitoring factors — with no valuation and no conclusion.
 
-## Management Team
-Management-team profiles (CEO/CTO/COO/CFO) are added in live generation with LinkedIn search context when available.
 `
 }
 
@@ -685,14 +629,9 @@ export async function POST(req: NextRequest) {
     const priceFacts = priceFactsMarkdown(context.quote)
     const contextMarkdown = contextToMarkdown(context)
     const companyName = context.sec.companyName || String(context.quote?.longName || context.quote?.shortName || ticker)
-    const managementProfiles = await withTimeout(
-      fetchManagementProfiles(companyName, ticker),
-      fastMode ? FAST_MANAGEMENT_TIMEOUT_MS : 9000,
-      [] as ManagementProfile[],
-    )
 
     if (fastMode) {
-      const prompt = buildFastPrompt(ticker, domain, companyName, priceFacts, contextMarkdown, managementProfiles)
+      const prompt = buildFastPrompt(ticker, domain, companyName, priceFacts, contextMarkdown)
       const hasOpenAI = Boolean(process.env.OPENAI_API_KEY || process.env.OpenAI)
       const fastReport = hasOpenAI
         ? await callOpenAI(
@@ -768,13 +707,13 @@ export async function POST(req: NextRequest) {
 
     // ── STEP 3: Claude Sonnet writes the final article ────────────
     let finalReport = await callAnthropic(
-      buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, managementProfiles),
+      buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv),
       8192,
     )
     // Fallback: GPT-4o-mini writes the final article.
     if (!finalReport) {
       finalReport = await callOpenAI(
-        buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, managementProfiles),
+        buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv),
         'You are an institutional equity research analyst. Return only the article in markdown.',
         10000,
       )

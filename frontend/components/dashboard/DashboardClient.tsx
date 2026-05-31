@@ -124,32 +124,103 @@ export default function DashboardClient() {
     setError(null)
     try {
       await new Promise((resolve) => setTimeout(resolve, 250))
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#f7f3ea',
-      })
-
       const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' })
       const pdfWidth = pdf.internal.pageSize.getWidth()
       const pdfHeight = pdf.internal.pageSize.getHeight()
+      const pageWidthPx = 794
+      const pageHeightPx = 1123
+      const marginPx = 72
+      const footerPx = 36
+      const sourceBody = reportRef.current.querySelector('[data-report-body]')
+      if (!sourceBody) throw new Error('Report body missing')
 
-      const imageData = canvas.toDataURL('image/png')
-      const imageWidth = pdfWidth
-      const imageHeight = (canvas.height * imageWidth) / canvas.width
+      const staging = document.createElement('div')
+      staging.style.position = 'fixed'
+      staging.style.left = '-10000px'
+      staging.style.top = '0'
+      staging.style.width = `${pageWidthPx}px`
+      staging.style.background = '#fff'
+      staging.style.color = '#000'
+      staging.style.zIndex = '-1'
 
-      let heightLeft = imageHeight
-      let position = 0
-      pdf.addImage(imageData, 'PNG', 0, position, imageWidth, imageHeight)
-      heightLeft -= pdfHeight
+      const style = document.createElement('style')
+      style.textContent = `
+        .pdf-page, .pdf-page * { box-sizing: border-box; color: #000 !important; }
+        .pdf-page { width: ${pageWidthPx}px; height: ${pageHeightPx}px; padding: ${marginPx}px ${marginPx}px ${footerPx + 24}px; background: #fff; font-family: "Times New Roman", Times, serif; position: relative; overflow: hidden; }
+        .pdf-title { margin: 0 0 12px; font-size: 22px; line-height: 1.25; font-weight: 700; }
+        .pdf-meta { margin: 0 0 18px; border-bottom: 1px solid #000; padding-bottom: 8px; font-size: 11px; letter-spacing: 0; text-transform: uppercase; }
+        .pdf-body { height: 100%; overflow: hidden; }
+        .pdf-body h1, .pdf-body h2, .pdf-body h3 { margin: 20px 0 10px; font-weight: 700; line-height: 1.25; }
+        .pdf-body h2 { font-size: 17px; }
+        .pdf-body h3 { font-size: 15px; }
+        .pdf-body p { margin: 0 0 14px; font-size: 14px; line-height: 1.42; text-align: left; }
+        .pdf-body ul, .pdf-body ol { margin: 0 0 14px 20px; padding: 0; font-size: 14px; line-height: 1.42; }
+        .pdf-body table { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 12px; }
+        .pdf-body th, .pdf-body td { border: 1px solid #000; padding: 5px; vertical-align: top; }
+        .pdf-body pre { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid #000; padding: 8px; font-size: 10px; }
+        .pdf-body svg { max-width: 100%; height: auto; }
+        .pdf-block { break-inside: avoid; page-break-inside: avoid; }
+        .pdf-footer { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; font-size: 12px; }
+      `
+      staging.appendChild(style)
+      document.body.appendChild(staging)
 
-      while (heightLeft > 0) {
-        position = heightLeft - imageHeight
-        pdf.addPage()
-        pdf.addImage(imageData, 'PNG', 0, position, imageWidth, imageHeight)
-        heightLeft -= pdfHeight
+      const pages: Array<{ page: HTMLDivElement; body: HTMLDivElement; footer: HTMLDivElement }> = []
+      const createPage = (pageIndex: number) => {
+        const page = document.createElement('div')
+        page.className = 'pdf-page'
+        const body = document.createElement('div')
+        body.className = 'pdf-body'
+        if (pageIndex === 0) {
+          const title = document.createElement('h1')
+          title.className = 'pdf-title'
+          title.textContent = extractTitle(report.reportMarkdown, report.ticker)
+          const meta = document.createElement('p')
+          meta.className = 'pdf-meta'
+          meta.textContent = report.domain || 'Equity Research'
+          page.appendChild(title)
+          page.appendChild(meta)
+          body.style.height = `${pageHeightPx - marginPx - footerPx - 24 - marginPx - 90}px`
+        } else {
+          body.style.height = `${pageHeightPx - marginPx - footerPx - 24 - marginPx}px`
+        }
+        const footer = document.createElement('div')
+        footer.className = 'pdf-footer'
+        page.appendChild(body)
+        page.appendChild(footer)
+        staging.appendChild(page)
+        pages.push({ page, body, footer })
+        return body
       }
 
+      let currentBody = createPage(0)
+      Array.from(sourceBody.children).forEach((child) => {
+        const clone = child.cloneNode(true) as HTMLElement
+        clone.classList.add('pdf-block')
+        currentBody.appendChild(clone)
+        if (currentBody.scrollHeight > currentBody.clientHeight && currentBody.children.length > 1) {
+          currentBody.removeChild(clone)
+          currentBody = createPage(pages.length)
+          currentBody.appendChild(clone)
+        }
+      })
+
+      pages.forEach(({ footer }, index) => {
+        footer.textContent = String(index + 1)
+      })
+
+      for (const [index, { page }] of pages.entries()) {
+        const canvas = await html2canvas(page, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+        })
+        const imageData = canvas.toDataURL('image/png')
+        if (index > 0) pdf.addPage()
+        pdf.addImage(imageData, 'PNG', 0, 0, pdfWidth, pdfHeight)
+      }
+
+      document.body.removeChild(staging)
       pdf.save(`${report.ticker}_sidereus_research.pdf`)
     } catch {
       setError('PDF export failed. Please try again.')
@@ -270,7 +341,7 @@ export default function DashboardClient() {
             <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
               {!isGenerating && !report && !error && (
                 <div className="max-w-2xl rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-sm leading-6 text-fog-dim">
-                  Sidereus runs a multi-model pipeline — Claude Sonnet reads the SEC filings, GPT-4o-mini renders the diagrams and supply-chain flowchart, then Claude Sonnet writes the article: company overview, a first-principles technology masterclass, an end-to-end supply chain analysis, and a flowing investment narrative. No valuation, no price targets.
+                  Sidereus generates an academic-style equity research paper with company overview, technology breakdown, supply-chain analysis, and investment analysis. No valuation, no price targets.
                 </div>
               )}
 
@@ -307,23 +378,23 @@ export default function DashboardClient() {
               )}
 
               {report && (
-                <article ref={reportRef} className="max-w-3xl rounded-lg border border-white/[0.07] bg-[#f7f3ea] px-5 py-5 text-[#171510] shadow-2xl">
+                <article ref={reportRef} className="max-w-3xl rounded-sm border border-black/10 bg-white px-8 py-8 font-serif text-black shadow-none">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-3">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-black/45">{report.domain || 'Equity Research'}</p>
-                      <h2 className="mt-1 text-xl font-semibold tracking-normal">{extractTitle(report.reportMarkdown, report.ticker)}</h2>
+                      <p className="text-xs uppercase text-black/55">{report.domain || 'Equity Research'}</p>
+                      <h2 className="mt-1 text-xl font-bold tracking-normal">{extractTitle(report.reportMarkdown, report.ticker)}</h2>
                     </div>
                     <button
                       type="button"
                       onClick={generatePdfFromPreview}
                       disabled={isExportingPdf}
-                      className="inline-flex items-center gap-2 rounded-md bg-[#171510] px-3 py-2 text-xs font-semibold text-[#f7f3ea] disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-sm bg-black px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
                     >
                       {isExportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                       {isExportingPdf ? 'Exporting...' : 'PDF'}
                     </button>
                   </div>
-                  <div className="prose prose-sm max-w-none leading-7 prose-headings:mt-7 prose-headings:mb-3 prose-headings:text-[#171510] prose-p:my-4 prose-p:text-[#171510] prose-li:my-1 prose-li:text-[#171510] prose-strong:text-[#171510] prose-pre:my-5 prose-pre:rounded-md prose-pre:border prose-pre:border-black/10 prose-pre:bg-white prose-pre:text-[#171510]">
+                  <div data-report-body className="prose prose-sm max-w-none leading-7 prose-headings:mt-8 prose-headings:mb-4 prose-headings:font-bold prose-headings:text-black prose-p:my-5 prose-p:text-black prose-li:my-1 prose-li:text-black prose-strong:text-black prose-pre:my-6 prose-pre:rounded-sm prose-pre:border prose-pre:border-black/20 prose-pre:bg-white prose-pre:text-black">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
@@ -359,7 +430,7 @@ export default function DashboardClient() {
             <p className="text-xs font-medium uppercase tracking-[0.16em] text-fog-dim">Output</p>
             <div className="mt-4 space-y-3 text-sm text-fog-dim">
               <div className="rounded-md border border-white/[0.07] p-3">Company overview</div>
-              <div className="rounded-md border border-white/[0.07] p-3">Technology masterclass</div>
+              <div className="rounded-md border border-white/[0.07] p-3">Technology breakdown</div>
               <div className="rounded-md border border-white/[0.07] p-3">Supply chain flowchart</div>
               <div className="rounded-md border border-white/[0.07] p-3">Diagrams &amp; tables</div>
               <div className="rounded-md border border-white/[0.07] p-3">Automatic PDF</div>
@@ -370,3 +441,4 @@ export default function DashboardClient() {
     </div>
   )
 }
+
