@@ -323,7 +323,7 @@ export default function DashboardClient() {
                       {isExportingPdf ? 'Exporting...' : 'PDF'}
                     </button>
                   </div>
-                  <div className="prose prose-sm max-w-none prose-headings:text-[#171510] prose-p:text-[#171510] prose-li:text-[#171510] prose-strong:text-[#171510] prose-pre:rounded-md prose-pre:border prose-pre:border-black/10 prose-pre:bg-white prose-pre:text-[#171510]">
+                  <div className="prose prose-sm max-w-none leading-7 prose-headings:mt-7 prose-headings:mb-3 prose-headings:text-[#171510] prose-p:my-4 prose-p:text-[#171510] prose-li:my-1 prose-li:text-[#171510] prose-strong:text-[#171510] prose-pre:my-5 prose-pre:rounded-md prose-pre:border prose-pre:border-black/10 prose-pre:bg-white prose-pre:text-[#171510]">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{

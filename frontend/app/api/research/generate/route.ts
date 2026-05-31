@@ -28,6 +28,7 @@ const REPORT_SECTIONS = [
   'Technology Masterclass',
   'Supply Chain Analysis',
   'Investment Analysis',
+  'Management Team',
 ]
 
 const SEC_HEADERS = {
@@ -57,6 +58,45 @@ async function fetchText(url: string, init?: RequestInit) {
   const res = await fetch(url, { ...init, cache: 'no-store' })
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
   return res.text()
+}
+
+function normalizeReportMarkdown(markdown: string) {
+  const parts = markdown.split(/(```[\s\S]*?```)/g)
+  const normalized = parts.map((part) => {
+    if (part.startsWith('```')) return part
+    const lines = part.split('\n')
+    const out: string[] = []
+    let paragraph: string[] = []
+
+    const flushParagraph = () => {
+      if (!paragraph.length) return
+      out.push(paragraph.join(' ').replace(/\s+/g, ' ').trim())
+      out.push('')
+      paragraph = []
+    }
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim()
+      const isStructural =
+        line === '' ||
+        /^#{1,6}\s/.test(line) ||
+        /^[-*+]\s/.test(line) ||
+        /^\d+\.\s/.test(line) ||
+        /^\|/.test(line) ||
+        /^>\s?/.test(line) ||
+        /^---+$/.test(line)
+
+      if (isStructural) {
+        flushParagraph()
+        out.push(line)
+        continue
+      }
+      paragraph.push(line)
+    }
+    flushParagraph()
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  })
+  return normalized.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 function stripHtml(input: string) {
@@ -197,6 +237,41 @@ async function fetchArxiv(query: string): Promise<ContextBundle['arxiv']> {
   } catch {
     return []
   }
+}
+
+type ManagementProfile = {
+  name: string
+  role: string
+  linkedinUrl?: string
+  snippet?: string
+}
+
+async function fetchManagementProfiles(companyName: string, ticker: string) {
+  const roles = ['CEO', 'CTO', 'COO', 'CFO']
+  const profiles: ManagementProfile[] = []
+
+  for (const role of roles) {
+    try {
+      const q = encodeURIComponent(`site:linkedin.com/in ${companyName} ${ticker} ${role}`)
+      const html = await fetchText(`https://duckduckgo.com/html/?q=${q}`)
+      const match = html.match(
+        /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i
+      )
+      if (!match) continue
+      const url = match[1]
+      const title = stripHtml(match[2])
+      const snippet = stripHtml(match[3])
+      profiles.push({
+        name: title,
+        role,
+        linkedinUrl: url.includes('linkedin.com') ? url : undefined,
+        snippet,
+      })
+    } catch {
+      continue
+    }
+  }
+  return profiles
 }
 
 async function fetchSecContext(ticker: string): Promise<Omit<ContextBundle['sec'], never>> {
@@ -359,10 +434,16 @@ function buildFinalPrompt(
   factsMarkdown: string,
   visualsMarkdown: string,
   arxiv: ContextBundle['arxiv'],
+  managementProfiles: ManagementProfile[],
 ) {
   const arxivBlock = arxiv.length
     ? arxiv.map((p) => `- ${p.title} — ${p.url}`).join('\n')
     : 'No specific papers retrieved; ground technology claims in established engineering principles.'
+  const managementBlock = managementProfiles.length
+    ? managementProfiles
+      .map((m) => `- Role: ${m.role}\n  Candidate: ${m.name}\n  LinkedIn: ${m.linkedinUrl || 'N/A'}\n  Snippet: ${m.snippet || 'N/A'}`)
+      .join('\n')
+    : 'No LinkedIn snippets were reliably retrieved. If uncertain, state that data is unavailable rather than inventing details.'
 
   return `You are the lead analyst at Sidereus writing the final institutional research article on ${ticker} (${domain}).
 
@@ -372,6 +453,7 @@ FORMATTING (critical):
 - Each section title is a level-2 markdown heading: "## Title". The app renders these as bold subtitles.
 - Subsection labels inside a section may use a short bold lead-in. Do NOT pepper prose with ** or stray symbols.
 - Embed the provided Mermaid diagrams VERBATIM (copy the \`\`\`mermaid ... \`\`\` blocks exactly) into the relevant sections. Do not modify the mermaid code.
+- Write full paragraphs with blank lines between paragraphs. Do not hard-wrap every sentence on a separate line.
 
 WRITE EXACTLY THESE SECTIONS, IN ORDER:
 
@@ -391,10 +473,13 @@ Embed the end-to-end supply-chain Mermaid flowchart from the visual pack. Walk t
 ## Investment Analysis
 Write as ONE flowing institutional article — NOT a list. Do NOT use separate headings or labels for catalysts, risks, variant perception, or monitoring factors. Integrate all of them naturally into the prose: competitive positioning, industry dynamics, supply-demand trends, technology roadmap, customer adoption, strategic advantages, emerging risks, the variant perception (where you differ from consensus and why), and what to monitor going forward. Evidence-driven and thesis-oriented throughout.
 
+## Management Team
+End the report with a management-team section. Cover key executives (CEO, CTO, COO, CFO where applicable), and for each provide a concise profile: education, prior operating experience, and relevance to current strategy. Use the LinkedIn candidate data below plus filing context. If a datapoint is unverified, explicitly label it as "unverified" instead of guessing.
+
 HARD CONSTRAINTS:
 - NO financial modeling: do not discuss valuation, price targets, DCF, multiples, margins, or financial forecasts anywhere.
-- NO conclusion / summary section. End naturally after the Investment Analysis.
-- Target length: a substantial deep-dive (roughly 2,500-4,500 words). Do not be brief.
+- NO conclusion / summary section. End naturally after the Management Team section.
+- Target length: a substantial deep-dive aimed at roughly 1,800-2,800 words so rendered PDF output is typically about 3 pages. Do not be brief.
 
 Research papers for grounding the technology section:
 ${arxivBlock}
@@ -404,6 +489,9 @@ ${factsMarkdown}
 
 Visual asset pack (embed the mermaid diagrams verbatim, use the explainers/tables):
 ${visualsMarkdown}
+
+LinkedIn management search candidates:
+${managementBlock}
 
 Return only the article in markdown.`
 }
@@ -422,7 +510,11 @@ The production pipeline uses Claude Sonnet to read SEC filings (10-K, 10-Q, S-1,
 Set server-side ANTHROPIC_API_KEY and OPENAI_API_KEY in Vercel environment variables to enable live generation.
 
 ## Investment Analysis
-Once keys are configured, this section becomes a flowing institutional narrative integrating competitive positioning, industry dynamics, technology roadmap, emerging risks, variant perception, and monitoring factors — with no valuation and no conclusion.`
+Once keys are configured, this section becomes a flowing institutional narrative integrating competitive positioning, industry dynamics, technology roadmap, emerging risks, variant perception, and monitoring factors — with no valuation and no conclusion.
+
+## Management Team
+Management-team profiles (CEO/CTO/COO/CFO) are added in live generation with LinkedIn search context when available.
+`
 }
 
 // ── LLM callers ─────────────────────────────────────────────────
@@ -485,7 +577,7 @@ function normalizeBackendResponse(data: Record<string, unknown>, ticker: string,
     ticker,
     domain,
     companyName: typeof data.companyName === 'string' ? data.companyName : ticker,
-    reportMarkdown,
+    reportMarkdown: normalizeReportMarkdown(reportMarkdown),
     sections: REPORT_SECTIONS,
     provider: 'python-backend',
     generatedAt: new Date().toISOString(),
@@ -507,6 +599,7 @@ export async function POST(req: NextRequest) {
     const priceFacts = priceFactsMarkdown(context.quote)
     const contextMarkdown = contextToMarkdown(context)
     const companyName = context.sec.companyName || String(context.quote?.longName || context.quote?.shortName || ticker)
+    const managementProfiles = await fetchManagementProfiles(companyName, ticker)
 
     // Optional Python backend proxy.
     if (backendUrl) {
@@ -559,13 +652,13 @@ export async function POST(req: NextRequest) {
 
     // ── STEP 3: Claude Sonnet writes the final article ────────────
     let finalReport = await callAnthropic(
-      buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv),
+      buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, managementProfiles),
       8192,
     )
     // Fallback: GPT-4o-mini writes the final article.
     if (!finalReport) {
       finalReport = await callOpenAI(
-        buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv),
+        buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, managementProfiles),
         'You are an institutional equity research analyst. Return only the article in markdown.',
         10000,
       )
@@ -577,7 +670,7 @@ export async function POST(req: NextRequest) {
         ticker,
         domain,
         companyName,
-        reportMarkdown: finalReport,
+        reportMarkdown: normalizeReportMarkdown(finalReport),
         sections: REPORT_SECTIONS,
         provider: 'claude-extract+gpt4omini-visuals+claude-narrative',
         generatedAt: new Date().toISOString(),
@@ -600,3 +693,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+
+
