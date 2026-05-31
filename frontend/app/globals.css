@@ -4,6 +4,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.sidereus-print-root {
+  display: none;
+}
+
 @layer base {
   :root {
     --background: 222 47% 4%;
@@ -28,6 +32,207 @@
     --radius: 0.75rem;
     --font-geist-sans: 'Geist', system-ui, sans-serif;
     --font-geist-mono: 'Geist Mono', monospace;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 0.72in 0.78in;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    overflow: visible !important;
+  }
+
+  body > :not(.sidereus-print-root) {
+    display: none !important;
+  }
+
+  .sidereus-print-root {
+    display: block !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .sidereus-print-root,
+  .sidereus-print-root * {
+    box-sizing: border-box;
+  }
+
+  .sidereus-print-report {
+    color: #000 !important;
+    font-family: "Times New Roman", Times, serif !important;
+    font-size: 11pt !important;
+    line-height: 1.45 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .sidereus-print-header {
+    border-bottom: 0.75pt solid #000;
+    margin: 0 0 14pt;
+    padding: 0 0 8pt;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .sidereus-print-header h1 {
+    color: #000 !important;
+    font-size: 18pt !important;
+    font-weight: 700 !important;
+    line-height: 1.18 !important;
+    margin: 0 0 5pt !important;
+  }
+
+  .sidereus-print-header p {
+    color: #000 !important;
+    font-size: 8.5pt !important;
+    letter-spacing: 0.04em !important;
+    margin: 0 !important;
+    text-transform: uppercase;
+  }
+
+  .sidereus-print-body h1,
+  .sidereus-print-body h2,
+  .sidereus-print-body h3,
+  .sidereus-print-body h4 {
+    color: #000 !important;
+    break-after: avoid;
+    page-break-after: avoid;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+  }
+
+  .sidereus-print-body h2 {
+    font-size: 13.5pt !important;
+    margin: 14pt 0 7pt !important;
+  }
+
+  .sidereus-print-body h3 {
+    font-size: 11.5pt !important;
+    margin: 12pt 0 6pt !important;
+  }
+
+  .sidereus-print-body p,
+  .sidereus-print-body li {
+    color: #000 !important;
+    font-size: 11pt !important;
+    line-height: 1.45 !important;
+    orphans: 3;
+    widows: 3;
+  }
+
+  .sidereus-print-body p {
+    margin: 0 0 11pt !important;
+  }
+
+  .sidereus-print-body ul,
+  .sidereus-print-body ol {
+    margin: 0 0 11pt 18pt !important;
+    padding: 0 !important;
+  }
+
+  .sidereus-print-section,
+  .sidereus-print-subsection,
+  .sidereus-print-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .sidereus-print-section {
+    margin: 0 0 13pt;
+  }
+
+  .sidereus-print-subsection {
+    margin: 0 0 11pt;
+  }
+
+  .sidereus-print-long {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .sidereus-print-body table {
+    border-collapse: collapse !important;
+    color: #000 !important;
+    font-size: 9pt !important;
+    margin: 8pt 0 11pt !important;
+    width: 100% !important;
+  }
+
+  .sidereus-print-body th,
+  .sidereus-print-body td {
+    border: 0.75pt solid #000 !important;
+    padding: 4pt !important;
+    vertical-align: top !important;
+  }
+
+  .sidereus-print-body pre {
+    background: #fff !important;
+    border: 0.75pt solid #000 !important;
+    color: #000 !important;
+    font-size: 8pt !important;
+    margin: 8pt 0 11pt !important;
+    overflow: visible !important;
+    padding: 6pt !important;
+    white-space: pre-wrap !important;
+  }
+
+  .sidereus-print-body figure,
+  .sidereus-print-chart {
+    margin: 9pt 0 12pt !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .sidereus-print-body figcaption {
+    color: #000 !important;
+    font-size: 8.5pt !important;
+    line-height: 1.3 !important;
+    margin-top: 5pt !important;
+    text-align: center !important;
+  }
+
+  .sidereus-print-body svg {
+    display: block !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    max-width: 100% !important;
+  }
+
+  .sidereus-print-body .katex-display {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    display: block !important;
+    margin: 10pt 0 12pt !important;
+    overflow: visible !important;
+    padding: 2pt 0 !important;
+    text-align: center !important;
+  }
+
+  .sidereus-print-body .katex,
+  .sidereus-print-body .katex * {
+    line-height: normal !important;
+    overflow: visible !important;
+  }
+
+  .sidereus-print-body .katex {
+    color: #000 !important;
+    font-size: 1em !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+  }
+
+  .sidereus-print-body .katex-html {
+    overflow: visible !important;
+  }
+
+  .sidereus-print-section > :last-child,
+  .sidereus-print-subsection > :last-child {
+    margin-bottom: 0 !important;
   }
 }
 

@@ -6,8 +6,6 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import html2canvas from 'html2canvas'
-import { jsPDF } from 'jspdf'
 
 type ReportPayload = {
   ticker: string
@@ -63,6 +61,95 @@ function isLikelyMermaid(raw: string) {
   return /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph)\b/m.test(
     source
   )
+}
+
+function sectionTitle(element: Element) {
+  return element.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || ''
+}
+
+function markPrintBlocks(root: HTMLElement) {
+  root.querySelectorAll('table, pre, figure, blockquote, ul, ol, .katex-display').forEach((element) => {
+    element.classList.add('sidereus-print-avoid')
+  })
+  root.querySelectorAll('svg').forEach((svg) => {
+    svg.closest('div')?.classList.add('sidereus-print-chart', 'sidereus-print-avoid')
+  })
+}
+
+function groupPrintSections(sourceBody: Element) {
+  const printBody = document.createElement('div')
+  printBody.className = 'sidereus-print-body'
+  let currentSection: HTMLElement | null = null
+  let currentSubsection: HTMLElement | null = null
+
+  Array.from(sourceBody.children).forEach((child) => {
+    const clone = child.cloneNode(true) as HTMLElement
+    if (clone.tagName === 'H2') {
+      currentSection = document.createElement('section')
+      currentSection.className = 'sidereus-print-section'
+      currentSection.dataset.sectionTitle = sectionTitle(clone)
+      currentSection.appendChild(clone)
+      printBody.appendChild(currentSection)
+      currentSubsection = null
+      return
+    }
+
+    if (clone.tagName === 'H3' && currentSection) {
+      currentSubsection = document.createElement('section')
+      currentSubsection.className = 'sidereus-print-subsection'
+      currentSubsection.appendChild(clone)
+      currentSection.appendChild(currentSubsection)
+      return
+    }
+
+    if (currentSubsection) {
+      currentSubsection.appendChild(clone)
+    } else if (currentSection) {
+      currentSection.appendChild(clone)
+    } else {
+      printBody.appendChild(clone)
+    }
+  })
+
+  printBody.querySelectorAll('.sidereus-print-section, .sidereus-print-subsection').forEach((element) => {
+    const title = element instanceof HTMLElement ? element.dataset.sectionTitle : ''
+    if (title === 'technology breakdown' || title === 'investment analysis' || element.children.length > 8) {
+      element.classList.add('sidereus-print-long')
+    }
+  })
+  markPrintBlocks(printBody)
+  return printBody
+}
+
+async function waitForPrintReadiness(sourceBody: Element) {
+  const started = Date.now()
+  while (sourceBody.textContent?.includes('Rendering chart...') && Date.now() - started < 4000) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+
+  const fonts = document.fonts
+  if (fonts) {
+    await Promise.allSettled([
+      fonts.load('11pt "Times New Roman"'),
+      fonts.load('11pt KaTeX_Main'),
+      fonts.load('11pt KaTeX_Math'),
+      fonts.load('11pt KaTeX_Size1'),
+      fonts.ready,
+    ])
+  }
+}
+
+async function waitForPrintAssets(root: HTMLElement) {
+  const images = Array.from(root.querySelectorAll('img'))
+  await Promise.allSettled(
+    images.map((image) => {
+      if (image.complete) return Promise.resolve()
+      return image.decode ? image.decode() : new Promise((resolve) => image.addEventListener('load', resolve, { once: true }))
+    })
+  )
+  if (document.fonts) {
+    await document.fonts.ready
+  }
 }
 
 function MermaidBlock({ chart }: { chart: string }) {
@@ -144,145 +231,49 @@ export default function DashboardClient() {
 
     setIsExportingPdf(true)
     setError(null)
+    let printRoot: HTMLDivElement | null = null
+    let cleanupTimer: ReturnType<typeof setTimeout> | null = null
     try {
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' })
-      const pdfWidth = pdf.internal.pageSize.getWidth()
-      const pdfHeight = pdf.internal.pageSize.getHeight()
-      const pageWidthPx = 794
-      const pageHeightPx = 1123
-      const marginPx = 96
-      const footerPx = 36
       const sourceBody = reportRef.current.querySelector('[data-report-body]')
       if (!sourceBody) throw new Error('Report body missing')
 
-      const staging = document.createElement('div')
-      staging.style.position = 'fixed'
-      staging.style.left = '-10000px'
-      staging.style.top = '0'
-      staging.style.width = `${pageWidthPx}px`
-      staging.style.background = '#fff'
-      staging.style.color = '#000'
-      staging.style.zIndex = '-1'
+      await waitForPrintReadiness(sourceBody)
 
-      const style = document.createElement('style')
-      style.textContent = `
-        .pdf-page, .pdf-page * { box-sizing: border-box; color: #000 !important; }
-        .pdf-page { width: ${pageWidthPx}px; height: ${pageHeightPx}px; padding: ${marginPx}px ${marginPx}px ${footerPx + 24}px; background: #fff; font-family: "Times New Roman", Times, serif; position: relative; overflow: hidden; }
-        .pdf-title { margin: 0 0 12px; font-size: 22px; line-height: 1.25; font-weight: 700; }
-        .pdf-meta { margin: 0 0 18px; border-bottom: 1px solid #000; padding-bottom: 8px; font-size: 11px; letter-spacing: 0; text-transform: uppercase; }
-        .pdf-body { height: 100%; overflow: hidden; }
-        .pdf-body h1, .pdf-body h2, .pdf-body h3 { margin: 20px 0 10px; font-weight: 700; line-height: 1.25; }
-        .pdf-body h2 { font-size: 18px; }
-        .pdf-body h3 { font-size: 16px; }
-        .pdf-body p { margin: 0 0 18px; font-size: 16px; line-height: 1.5; text-align: left; }
-        .pdf-body ul, .pdf-body ol { margin: 0 0 18px 20px; padding: 0; font-size: 16px; line-height: 1.5; }
-        .pdf-body table { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 12px; }
-        .pdf-body th, .pdf-body td { border: 1px solid #000; padding: 5px; vertical-align: top; }
-        .pdf-body pre { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid #000; padding: 8px; font-size: 10px; }
-        .pdf-body .katex-display { display: block; margin: 18px 0 22px; padding: 8px 0 10px; overflow: visible !important; text-align: center; }
-        .pdf-body .katex,
-        .pdf-body .katex * { line-height: normal !important; overflow: visible !important; }
-        .pdf-body .katex { display: inline-block; max-width: 100%; font-size: 1.05em; white-space: normal; }
-        .pdf-body .katex-html { overflow: visible !important; }
-        .pdf-body .katex-mathml {
-          position: absolute !important;
-          width: 1px !important;
-          height: 1px !important;
-          margin: -1px !important;
-          padding: 0 !important;
-          border: 0 !important;
-          overflow: hidden !important;
-          clip: rect(0, 0, 0, 0) !important;
-          clip-path: inset(50%) !important;
-          white-space: nowrap !important;
-        }
-        .pdf-body figure { margin: 18px 0; }
-        .pdf-body figcaption { margin-top: 6px; font-size: 12px; line-height: 1.35; text-align: center; }
-        .pdf-body svg { max-width: 100%; height: auto; }
-        .pdf-block { break-inside: avoid; page-break-inside: avoid; }
-        .pdf-footer { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; font-size: 12px; }
-      `
-      staging.appendChild(style)
-      document.body.appendChild(staging)
+      printRoot = document.createElement('div')
+      printRoot.className = 'sidereus-print-root'
+      printRoot.setAttribute('aria-hidden', 'true')
 
-      const pages: Array<{ page: HTMLDivElement; body: HTMLDivElement; footer: HTMLDivElement }> = []
-      const createPage = (pageIndex: number) => {
-        const page = document.createElement('div')
-        page.className = 'pdf-page'
-        const body = document.createElement('div')
-        body.className = 'pdf-body'
-        if (pageIndex === 0) {
-          const title = document.createElement('h1')
-          title.className = 'pdf-title'
-          title.textContent = extractTitle(report.reportMarkdown, report.ticker)
-          const meta = document.createElement('p')
-          meta.className = 'pdf-meta'
-          meta.textContent = report.domain || 'Equity Research'
-          page.appendChild(title)
-          page.appendChild(meta)
-          const headerUsedPx = title.offsetHeight + meta.offsetHeight + 28
-          body.style.height = `${pageHeightPx - marginPx - footerPx - 24 - marginPx - headerUsedPx}px`
-        } else {
-          body.style.height = `${pageHeightPx - marginPx - footerPx - 24 - marginPx}px`
-        }
-        const footer = document.createElement('div')
-        footer.className = 'pdf-footer'
-        page.appendChild(body)
-        page.appendChild(footer)
-        staging.appendChild(page)
-        pages.push({ page, body, footer })
-        return body
+      const article = document.createElement('article')
+      article.className = 'sidereus-print-report'
+
+      const header = document.createElement('header')
+      header.className = 'sidereus-print-header'
+      const title = document.createElement('h1')
+      title.textContent = extractTitle(report.reportMarkdown, report.ticker)
+      const meta = document.createElement('p')
+      meta.textContent = report.domain || 'Equity Research'
+      header.appendChild(title)
+      header.appendChild(meta)
+      article.appendChild(header)
+      article.appendChild(groupPrintSections(sourceBody))
+      printRoot.appendChild(article)
+      document.body.appendChild(printRoot)
+
+      await waitForPrintAssets(printRoot)
+
+      const cleanup = () => {
+        if (cleanupTimer) clearTimeout(cleanupTimer)
+        printRoot?.remove()
+        printRoot = null
+        window.removeEventListener('afterprint', cleanup)
       }
 
-      let currentBody = createPage(0)
-      Array.from(sourceBody.children).forEach((child) => {
-        const clone = child.cloneNode(true) as HTMLElement
-        const headingText = clone.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || ''
-        if (
-          clone.tagName === 'H2' &&
-          headingText === 'technology breakdown' &&
-          pages.length === 1 &&
-          currentBody.children.length > 0
-        ) {
-          currentBody = createPage(pages.length)
-        }
-        if (
-          ['PRE', 'TABLE', 'FIGURE', 'UL', 'OL', 'BLOCKQUOTE'].includes(clone.tagName) ||
-          clone.querySelector('svg, table, pre, .katex-display')
-        ) {
-          clone.classList.add('pdf-block')
-        }
-        const remainingHeight = currentBody.clientHeight - currentBody.scrollHeight
-        if (clone.tagName === 'H2' && currentBody.children.length > 0 && remainingHeight < 96) {
-          currentBody = createPage(pages.length)
-        }
-        currentBody.appendChild(clone)
-        if (currentBody.scrollHeight > currentBody.clientHeight && currentBody.children.length > 1) {
-          currentBody.removeChild(clone)
-          currentBody = createPage(pages.length)
-          currentBody.appendChild(clone)
-        }
-      })
-
-      pages.forEach(({ footer }, index) => {
-        footer.textContent = String(index + 1)
-      })
-
-      for (const [index, { page }] of pages.entries()) {
-        const canvas = await html2canvas(page, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-        })
-        const imageData = canvas.toDataURL('image/png')
-        if (index > 0) pdf.addPage()
-        pdf.addImage(imageData, 'PNG', 0, 0, pdfWidth, pdfHeight)
-      }
-
-      document.body.removeChild(staging)
-      pdf.save(`${report.ticker}_sidereus_research.pdf`)
+      window.addEventListener('afterprint', cleanup, { once: true })
+      window.print()
+      cleanupTimer = setTimeout(cleanup, 2000)
     } catch {
+      if (cleanupTimer) clearTimeout(cleanupTimer)
+      printRoot?.remove()
       setError('PDF export failed. Please try again.')
     } finally {
       setIsExportingPdf(false)
