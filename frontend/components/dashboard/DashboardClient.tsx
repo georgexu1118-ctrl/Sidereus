@@ -46,6 +46,17 @@ function normalizeMermaidSource(raw: string) {
   return trimmed
 }
 
+function sanitizeMermaidSource(source: string) {
+  return source.replace(/\[([^\]]+)\]/g, (_, label: string) => {
+    const cleaned = label
+      .replace(/[()]/g, '')
+      .replace(/[{}]/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+    return `[${cleaned}]`
+  })
+}
+
 function isLikelyMermaid(raw: string) {
   const source = normalizeMermaidSource(raw)
   if (!source) return false
@@ -65,15 +76,24 @@ function MermaidBlock({ chart }: { chart: string }) {
         const mermaidModule = await import('mermaid')
         mermaidModule.default.initialize({
           startOnLoad: false,
-          securityLevel: 'strict',
+          securityLevel: 'loose',
           theme: 'default',
         })
-        const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`
-        const { svg: renderedSvg } = await mermaidModule.default.render(id, chart)
-        if (!cancelled) {
-          setSvg(renderedSvg)
-          setError('')
+        const candidates = Array.from(new Set([chart, sanitizeMermaidSource(chart)]))
+        for (const candidate of candidates) {
+          try {
+            const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`
+            const { svg: renderedSvg } = await mermaidModule.default.render(id, candidate)
+            if (!cancelled) {
+              setSvg(renderedSvg)
+              setError('')
+            }
+            return
+          } catch {
+            continue
+          }
         }
+        throw new Error('Mermaid render failed')
       } catch {
         if (!cancelled) {
           setSvg('')
@@ -165,6 +185,18 @@ export default function DashboardClient() {
         .pdf-body .katex * { line-height: normal !important; overflow: visible !important; }
         .pdf-body .katex { display: inline-block; max-width: 100%; font-size: 1.05em; white-space: normal; }
         .pdf-body .katex-html { overflow: visible !important; }
+        .pdf-body .katex-mathml {
+          position: absolute !important;
+          width: 1px !important;
+          height: 1px !important;
+          margin: -1px !important;
+          padding: 0 !important;
+          border: 0 !important;
+          overflow: hidden !important;
+          clip: rect(0, 0, 0, 0) !important;
+          clip-path: inset(50%) !important;
+          white-space: nowrap !important;
+        }
         .pdf-body figure { margin: 18px 0; }
         .pdf-body figcaption { margin-top: 6px; font-size: 12px; line-height: 1.35; text-align: center; }
         .pdf-body svg { max-width: 100%; height: auto; }
@@ -189,7 +221,8 @@ export default function DashboardClient() {
           meta.textContent = report.domain || 'Equity Research'
           page.appendChild(title)
           page.appendChild(meta)
-          body.style.height = `${pageHeightPx - marginPx - footerPx - 24 - marginPx - 90}px`
+          const headerUsedPx = title.offsetHeight + meta.offsetHeight + 28
+          body.style.height = `${pageHeightPx - marginPx - footerPx - 24 - marginPx - headerUsedPx}px`
         } else {
           body.style.height = `${pageHeightPx - marginPx - footerPx - 24 - marginPx}px`
         }
@@ -205,9 +238,14 @@ export default function DashboardClient() {
       let currentBody = createPage(0)
       Array.from(sourceBody.children).forEach((child) => {
         const clone = child.cloneNode(true) as HTMLElement
-        clone.classList.add('pdf-block')
+        if (
+          ['PRE', 'TABLE', 'FIGURE', 'UL', 'OL', 'BLOCKQUOTE'].includes(clone.tagName) ||
+          clone.querySelector('svg, table, pre, .katex-display')
+        ) {
+          clone.classList.add('pdf-block')
+        }
         const remainingHeight = currentBody.clientHeight - currentBody.scrollHeight
-        if (clone.tagName === 'H2' && currentBody.children.length > 0 && remainingHeight < 160) {
+        if (clone.tagName === 'H2' && currentBody.children.length > 0 && remainingHeight < 96) {
           currentBody = createPage(pages.length)
         }
         currentBody.appendChild(clone)
