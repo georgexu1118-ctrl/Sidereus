@@ -74,6 +74,11 @@ function markPrintBlocks(root: HTMLElement) {
   root.querySelectorAll('svg').forEach((svg) => {
     svg.closest('div')?.classList.add('sidereus-print-chart', 'sidereus-print-avoid')
   })
+  root.querySelectorAll<HTMLElement>('[data-section-title*="technology"]').forEach((section) => {
+    section.querySelectorAll('svg').forEach((svg) => {
+      svg.closest('div')?.classList.add('sidereus-print-tech-chart')
+    })
+  })
 }
 
 function groupPrintSections(sourceBody: Element) {
@@ -123,7 +128,7 @@ function groupPrintSections(sourceBody: Element) {
 
 async function waitForPrintReadiness(sourceBody: Element) {
   const started = Date.now()
-  while (sourceBody.textContent?.includes('Rendering chart...') && Date.now() - started < 4000) {
+  while (sourceBody.textContent?.includes('Rendering chart...') && Date.now() - started < 10000) {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
 
@@ -195,7 +200,11 @@ function MermaidBlock({ chart }: { chart: string }) {
   }, [chart])
 
   if (error) {
-    return <pre className="overflow-x-auto rounded-md border border-black/10 bg-white p-3 text-xs">{chart}</pre>
+    return (
+      <pre className="sidereus-print-mermaid-fallback overflow-x-auto rounded-md border border-black/10 bg-white p-3 text-xs">
+        {chart}
+      </pre>
+    )
   }
 
   if (!svg) {

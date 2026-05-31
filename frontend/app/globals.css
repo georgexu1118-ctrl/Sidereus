@@ -203,6 +203,22 @@
     max-width: 100% !important;
   }
 
+  .sidereus-print-tech-chart svg {
+    width: auto !important;
+    height: auto !important;
+    max-width: 100% !important;
+    max-height: 3in !important;
+  }
+
+  .sidereus-print-tech-chart {
+    max-height: 3.2in !important;
+    overflow: hidden !important;
+  }
+
+  .sidereus-print-mermaid-fallback {
+    display: none !important;
+  }
+
   .sidereus-print-body .katex-display {
     break-inside: avoid;
     page-break-inside: avoid;

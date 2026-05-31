@@ -372,15 +372,21 @@ function buildVisualsPrompt(ticker: string, domain: string, factsMarkdown: strin
 Produce these assets, each clearly labelled:
 
 A) TECHNOLOGY DIAGRAMS - 3 Mermaid diagrams that explain how the core technology works:
-   - An engineering / system-architecture diagram (flowchart LR or TB)
-   - A manufacturing-process diagram (flowchart showing process steps)
+   - An engineering / system-architecture diagram
+   - A manufacturing-process diagram (process steps)
    - A mechanism sketch / physics sketch / molecular-pathway sketch, depending on the company domain
    Use this fence format exactly:
    \`\`\`mermaid
    flowchart LR
        A[Component<br/>detail] --> B[Next stage<br/>detail]
    \`\`\`
-   Keep node labels short, use <br/> for line breaks, label edges with the real interface/material. Add color classDef rules for at least three node classes (focal, dependency, customer or biology/compute/material) so the diagrams resemble polished academic figures.
+   HARD constraints for ALL THREE technology diagrams:
+   - ALWAYS use \`flowchart LR\` (horizontal left-to-right). Never use TB, TD, or BT — the printed PDF cannot accommodate tall vertical charts.
+   - Keep each diagram compact: 6-10 total nodes maximum, 1-2 short branches.
+   - Node labels must be very short (1-3 words, max ~14 characters). Use <br/> only when essential.
+   - Label edges with the real interface/material in 1-2 words.
+   - Add color classDef rules for at least three node classes (focal, dependency, customer or biology/compute/material).
+   - Each diagram must fit within roughly one third of a printed PDF page when rendered.
 
 B) SUPPLY CHAIN FLOWCHART - one rich, multi-branch end-to-end Mermaid map (flowchart LR),
    modelled on a professional analyst's supply-chain map: ${ticker} sits on the left and
