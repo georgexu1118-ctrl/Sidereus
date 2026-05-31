@@ -38,9 +38,9 @@ const SEC_HEADERS = {
 
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_FAST_MODEL || 'claude-3-5-sonnet-latest'
 const OPENAI_MINI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-const FAST_CONTEXT_TIMEOUT_MS = 7000
-const FAST_MANAGEMENT_TIMEOUT_MS = 2500
-const FAST_MODEL_TIMEOUT_MS = 22000
+const FAST_CONTEXT_TIMEOUT_MS = 5000
+const FAST_MANAGEMENT_TIMEOUT_MS = 1500
+const FAST_MODEL_TIMEOUT_MS = 21000
 
 function detectDomain(ticker: string, domain?: string) {
   if (domain) return domain
@@ -693,14 +693,15 @@ export async function POST(req: NextRequest) {
 
     if (fastMode) {
       const prompt = buildFastPrompt(ticker, domain, companyName, priceFacts, contextMarkdown, managementProfiles)
-      const fastReport =
-        await callOpenAI(
+      const hasOpenAI = Boolean(process.env.OPENAI_API_KEY || process.env.OpenAI)
+      const fastReport = hasOpenAI
+        ? await callOpenAI(
           prompt,
           'You are a fast institutional equity research writer. Return only markdown.',
           6500,
           FAST_MODEL_TIMEOUT_MS,
-        ) ||
-        await callAnthropic(prompt, 6500, FAST_MODEL_TIMEOUT_MS)
+        )
+        : await callAnthropic(prompt, 6500, FAST_MODEL_TIMEOUT_MS)
 
       if (fastReport) {
         return NextResponse.json({
