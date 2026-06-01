@@ -702,7 +702,10 @@ Once keys are configured, this section becomes a flowing institutional narrative
 // ── LLM callers ─────────────────────────────────────────────────
 async function callAnthropic(prompt: string, maxTokens: number, timeoutMs = 45000): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.Claude
-  if (!apiKey) return null
+  if (!apiKey) {
+    console.warn('[sidereus] callAnthropic: no API key (checked ANTHROPIC_API_KEY, Claude)')
+    return null
+  }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -717,10 +720,15 @@ async function callAnthropic(prompt: string, maxTokens: number, timeoutMs = 4500
         messages: [{ role: 'user', content: prompt }],
       }),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error(`[sidereus] Anthropic ${res.status} (model=${CLAUDE_MODEL}): ${body.slice(0, 300)}`)
+      return null
+    }
     const data = await res.json()
     return data?.content?.map((part: { text?: string }) => part.text || '').join('\n').trim() || null
-  } catch {
+  } catch (err) {
+    console.error('[sidereus] Anthropic exception:', err instanceof Error ? err.message : String(err))
     return null
   } finally {
     clearTimeout(timeout)
@@ -729,7 +737,10 @@ async function callAnthropic(prompt: string, maxTokens: number, timeoutMs = 4500
 
 async function callOpenAI(prompt: string, system: string, maxTokens: number, timeoutMs = 45000): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OpenAI
-  if (!apiKey) return null
+  if (!apiKey) {
+    console.warn('[sidereus] callOpenAI: no API key (checked OPENAI_API_KEY, OpenAI)')
+    return null
+  }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -747,10 +758,15 @@ async function callOpenAI(prompt: string, system: string, maxTokens: number, tim
         ],
       }),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error(`[sidereus] OpenAI ${res.status} (model=${OPENAI_MINI_MODEL}): ${body.slice(0, 300)}`)
+      return null
+    }
     const data = await res.json()
     return data?.choices?.[0]?.message?.content?.trim() || null
-  } catch {
+  } catch (err) {
+    console.error('[sidereus] OpenAI exception:', err instanceof Error ? err.message : String(err))
     return null
   } finally {
     clearTimeout(timeout)
@@ -797,17 +813,25 @@ export async function POST(req: NextRequest) {
     const contextMarkdown = contextToMarkdown(context)
     const companyName = context.sec.companyName || String(context.quote?.longName || context.quote?.shortName || ticker)
 
+    const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY || process.env.Claude)
+    const hasOpenAI = Boolean(process.env.OPENAI_API_KEY || process.env.OpenAI)
+    console.log(`[sidereus] ${ticker} | fast=${fastMode} | anthropic=${hasAnthropic} | openai=${hasOpenAI} | model=${CLAUDE_MODEL}`)
+
     if (fastMode) {
       const prompt = buildFastPrompt(ticker, domain, companyName, priceFacts, contextMarkdown, products)
-      const hasOpenAI = Boolean(process.env.OPENAI_API_KEY || process.env.OpenAI)
-      const fastReport = hasOpenAI
-        ? await callOpenAI(
+      // Try OpenAI first (faster), then fall back to Anthropic if it fails.
+      let fastReport: string | null = null
+      if (hasOpenAI) {
+        fastReport = await callOpenAI(
           prompt,
           'You are a fast institutional equity research writer. Return only markdown.',
           6500,
           FAST_MODEL_TIMEOUT_MS,
         )
-        : await callAnthropic(prompt, 6500, FAST_MODEL_TIMEOUT_MS)
+      }
+      if (!fastReport && hasAnthropic) {
+        fastReport = await callAnthropic(prompt, 6500, FAST_MODEL_TIMEOUT_MS)
+      }
 
       if (fastReport) {
         return NextResponse.json({
@@ -821,6 +845,7 @@ export async function POST(req: NextRequest) {
           generatedAt: new Date().toISOString(),
         })
       }
+      console.warn(`[sidereus] fast-mode: both models returned null, falling through to full pipeline`)
     }
 
     // Optional Python backend proxy.
