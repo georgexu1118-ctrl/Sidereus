@@ -228,12 +228,12 @@ async function fetchYahooNews(ticker: string) {
 }
 
 // Scrape product images from the company's own website.
-// Uses Yahoo Finance assetProfile to discover the website URL, then fetches
-// the homepage and common product pages to extract og:image meta tags and
-// product-section <img> tags. Runs in parallel with LLM calls so it adds
-// no wall-clock time to the generation pipeline.
+// Scoring approach: every img tag is a candidate; URL path + alt text
+// determine relevance. This catches sites like ao-inc.com whose images
+// live at /assets/product-images/ but aren't inside a class="product…" div.
+// IR-page redirects (e.g. axt.com → investors.axt.com) are detected via
+// the final response URL and skipped so only real product sites are scraped.
 async function fetchProductData(ticker: string): Promise<ProductData> {
-  // Step 1: get company website from Yahoo Finance assetProfile
   let website: string | null = null
   try {
     const auth = await getYahooCrumb()
@@ -258,63 +258,78 @@ async function fetchProductData(ticker: string): Promise<ProductData> {
 
   const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
   const seen = new Set<string>()
-  const images: ProductImage[] = []
+  const candidates: Array<{ url: string; name: string; score: number }> = []
   let pageText = ''
 
-  const extractFromHtml = (html: string, base: string) => {
-    // og:image / twitter:image meta tags — reliable on every major company site
-    const metaPatterns = [
+  // URL/alt text patterns that raise or lower relevance score
+  const positive = /product|item|solution|technology|model|device|component|substrate|wafer|crystal|laser|transceiver|module|chip|circuit|photo|feature|gallery|catalog|goods|hardware|element|image-content/i
+  const negative = /logo|icon|sprite|banner|arrow|button|flag|avatar|placeholder|blank|spacer|pixel|tracking|analytics|badge|social|share|q4cdn|favicon|spinner|separator/i
+
+  const extractFromHtml = (html: string, resolvedBase: string) => {
+    // og:image / twitter:image — highest confidence
+    for (const pat of [
       /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"'>]+)["']/i,
       /<meta[^>]+content=["']([^"'>]+)["'][^>]+property=["']og:image["']/i,
       /<meta[^>]+name=["']twitter:image(?::[^"']+)?["'][^>]+content=["']([^"'>]+)["']/i,
       /<meta[^>]+content=["']([^"'>]+)["'][^>]+name=["']twitter:image/i,
-    ]
-    for (const pat of metaPatterns) {
+    ]) {
       const m = html.match(pat)
-      if (m?.[1]) {
-        const url = m[1].startsWith('http') ? m[1] : `${base}${m[1].startsWith('/') ? '' : '/'}${m[1]}`
-        if (!seen.has(url) && /\.(jpg|jpeg|png|webp)/i.test(url)) {
-          seen.add(url); images.push({ url, name: 'Product' })
-        }
+      if (!m?.[1]) continue
+      const raw = m[1].trim()
+      const url = raw.startsWith('http') ? raw : raw.startsWith('//') ? `https:${raw}` : `${resolvedBase}${raw.startsWith('/') ? '' : '/'}${raw}`
+      if (!seen.has(url) && /\.(jpg|jpeg|png|webp)/i.test(url) && !negative.test(url)) {
+        seen.add(url)
+        candidates.push({ url, name: 'Product', score: 5 })
       }
     }
 
-    // img tags inside product/solution/card/gallery sections
-    const sectionRe = /<(?:section|div|article)[^>]*class=["'][^"']*(?:product|solution|feature|card|gallery|catalog|item)[^"']*["'][^>]*>([\s\S]{80,3000}?)<\/(?:section|div|article)>/gi
-    let sec: RegExpExecArray | null
-    while ((sec = sectionRe.exec(html)) !== null && images.length < 8) {
-      // match src or data-src (lazy-load) with alt
-      const imgRe = /<img[^>]+(?:(?:src|data-src|data-lazy-src)=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"'"]*)["'][^>]*(?:alt=["']([^"']*)["'])?|alt=["']([^"']*)["'][^>]*(?:src|data-src)=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)["'])/gi
-      let img: RegExpExecArray | null
-      while ((img = imgRe.exec(sec[1])) !== null && images.length < 8) {
-        const src = img[1] || img[4]
-        const alt = (img[2] || img[3] || '').trim()
-        if (!src) continue
-        if (/logo|icon|sprite|avatar|banner|arrow|chevron|flag/i.test(alt + src)) continue
-        const url = src.startsWith('http') ? src : src.startsWith('//') ? `https:${src}` : `${base}${src.startsWith('/') ? '' : '/'}${src}`
-        if (!seen.has(url)) { seen.add(url); images.push({ url, name: alt || 'Product' }) }
-      }
+    // Score every img by URL path relevance — catches product images
+    // regardless of which CSS class their container uses.
+    const imgRe = /<img[^>]+(?:(?:src|data-src|data-lazy-src)=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"'"]*)["'][^>]*(?:alt=["']([^"']*)["'])?|alt=["']([^"']*)["'][^>]*(?:src|data-src|data-lazy-src)=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)["'])/gi
+    let m: RegExpExecArray | null
+    while ((m = imgRe.exec(html)) !== null) {
+      const src = (m[1] || m[4] || '').trim()
+      const alt = (m[2] || m[3] || '').trim()
+      if (!src || negative.test(src + ' ' + alt)) continue
+      const url = src.startsWith('http') ? src : src.startsWith('//') ? `https:${src}` : `${resolvedBase}${src.startsWith('/') ? '' : '/'}${src}`
+      if (seen.has(url)) continue
+      seen.add(url)
+      let score = 0
+      if (positive.test(src)) score += 3
+      if (positive.test(alt)) score += 2
+      if (alt && !negative.test(alt)) score += 1
+      if (score > 0) candidates.push({ url, name: alt || 'Product', score })
     }
   }
 
-  const fetchPage = async (url: string) => {
+  const fetchAndExtract = async (pageUrl: string) => {
     try {
-      const html = await fetchText(url, { headers: { 'User-Agent': ua, Accept: 'text/html' } }, 5000)
-      extractFromHtml(html, baseOrigin)
+      const res = await fetchWithTimeout(pageUrl, {
+        headers: { 'User-Agent': ua, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
+      }, 5000)
+      if (!res.ok) return
+      const finalUrl = res.url  // actual URL after any redirects
+      // Skip if we were redirected to an investor-relations page —
+      // those contain only logos/icons, not product photography.
+      if (finalUrl !== pageUrl && /investor|\.q4cdn\.|ir\./i.test(finalUrl)) return
+      const html = await res.text()
+      let resolvedBase: string
+      try { resolvedBase = new URL(finalUrl).origin } catch { resolvedBase = baseOrigin }
+      extractFromHtml(html, resolvedBase)
       if (!pageText) pageText = stripHtml(html).slice(0, 3000)
     } catch { /* ignore */ }
   }
 
-  // Fetch homepage first, then product pages if we still need more images
-  await fetchPage(baseOrigin)
-  if (images.length < 3) {
-    for (const path of ['/products', '/en-us/products', '/solutions', '/technologies', '/en/products']) {
-      if (images.length >= 6) break
-      await fetchPage(baseOrigin + path)
+  await fetchAndExtract(baseOrigin)
+  if (candidates.length < 4) {
+    for (const path of ['/products', '/en-us/products', '/solutions', '/technologies', '/en/products', '/products-services']) {
+      if (candidates.length >= 8) break
+      await fetchAndExtract(baseOrigin + path)
     }
   }
 
-  return { images: images.slice(0, 6), pageText: pageText.slice(0, 3000) }
+  const top = candidates.sort((a, b) => b.score - a.score).slice(0, 6)
+  return { images: top.map(({ url, name }) => ({ url, name })), pageText: pageText.slice(0, 3000) }
 }
 
 function fmtMoney(value: unknown): string {
@@ -583,16 +598,15 @@ What the company does, core products, business model, key customers, and industr
 This is the only academic-style section and it must be the deepest part of the report. Write it like a technical paper section for a generalist investor: at least 2 rendered PDF pages, with first-principles explanation, clearly defined mechanisms, display equations, figure captions, and evidence-grounded claims. Embed the engineering/system-architecture, manufacturing-process, and mechanism-sketch Mermaid diagrams from the visual pack here. Use the technology explainers, equations, and tables. Ground claims in engineering principles and, where relevant, the research literature below. Make a generalist genuinely understand how it works.
 
 ## Product Breakdown
-Present the company's key products as a visual grid using the image URLs in PRODUCT IMAGES.
-Write a sharp 10-15 word investor-focused description for each product (what it does, why it matters commercially).
-Output exactly this code fence — no other content in this section:
+${products.images.length > 0
+  ? `Present the company's key products as a visual grid. Write a sharp 10-15 word investor-focused description for each product (what it does, why it matters commercially). Output exactly this code fence — no other prose in this section:
 \`\`\`product-grid
 [
-  {"url": "EXACT_URL_FROM_LIST", "name": "Product Name", "description": "10-15 word investor-focused description"},
   {"url": "EXACT_URL_FROM_LIST", "name": "Product Name", "description": "10-15 word investor-focused description"}
 ]
 \`\`\`
-Include 3-5 products. Use only the URLs from PRODUCT IMAGES — copy them verbatim. If PRODUCT IMAGES is empty, output \`\`\`product-grid\n[]\n\`\`\`.
+Include 3-5 products. Copy image URLs VERBATIM from PRODUCT IMAGES below.`
+  : 'OMIT THIS SECTION ENTIRELY — no product images were fetched. Do not output the "## Product Breakdown" heading or any content for it.'}
 
 ## Supply Chain Analysis
 Embed the end-to-end supply-chain Mermaid flowchart from the visual pack. Walk the chain node by node (upstream suppliers, manufacturing partners, distribution, end customers, dependencies, bottlenecks). For each node explain the economics, the competitive landscape, the key players, and the strategic importance. Use the supply-chain table if provided.
@@ -649,14 +663,13 @@ Section requirements:
 ${priceFacts}
 - Company Overview: business model, products, customers, positioning. Keep it compact and concrete.
 - Technology Breakdown: this is the only academic-style section. Make it the deepest part of the report, at least 2 rendered PDF pages, with first-principles explanation, one colored Mermaid sketch or graph, 2-3 advanced display equations in $$...$$ blocks, figure captions, and explanations of every variable. Use multi-variable equations tied to the actual technology: crystal-growth kinetics, defect-density / yield models, thermal transport, network bandwidth and latency, pharmacokinetics, trial statistics, or queueing / power-constrained capacity. Do not use elementary ratio formulas such as Throughput = Total Output / Total Time or Yield = Good Units / Total Units.
-- Product Breakdown: output ONLY this code fence — no other prose:
+- Product Breakdown: ${products.images.length > 0
+  ? `output ONLY this code fence — no other prose:
 \`\`\`product-grid
-[
-  {"url": "EXACT_URL", "name": "Product Name", "description": "10-15 word investor description"},
-  ...
-]
+[{"url": "EXACT_URL", "name": "Product Name", "description": "10-15 word investor description"}]
 \`\`\`
-Use 3-5 products. Copy image URLs verbatim from PRODUCT IMAGES below. If no images provided, output \`\`\`product-grid\n[]\n\`\`\`.
+Use 3-5 products. Copy image URLs verbatim from PRODUCT IMAGES below.`
+  : 'OMIT THIS SECTION ENTIRELY — no images available. Do not output the heading or any content.'}
 - Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises.
 - Investment Analysis: flowing institutional prose covering catalysts, risks, variant perception, competitive dynamics, and what to monitor. Do not use valuation, DCF, multiples, price targets, or financial forecasts.
 - Do not include a management-team section.
