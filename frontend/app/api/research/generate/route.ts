@@ -492,7 +492,7 @@ A) TECHNOLOGY DIAGRAMS - 3 Mermaid diagrams that explain how the core technology
 B) SUPPLY CHAIN FLOWCHART - one rich, multi-branch end-to-end Mermaid map (flowchart LR),
    modelled on a professional analyst's supply-chain map: ${ticker} sits on the left and
    FANS OUT through named intermediaries to many downstream end customers.
-   - Keep the diagram compact: exactly 3-4 distinct parallel branches and 10-14 total nodes with short labels (≤3 words per node). It must fit within the top half of one printed PDF page.
+   - Keep the diagram compact: 3-4 branches, 8-12 total nodes, labels ≤3 words. Must fit within half a printed PDF page.
    - Use $TICKER notation for public companies (e.g. $NVDA, $AMZN, $MSFT, $GOOGL, $AVGO).
    - Group related paths into labelled subgraph clusters (one per key intermediary/partner),
      each showing that intermediary then its specific downstream customers.
@@ -604,7 +604,8 @@ HARD CONSTRAINTS:
 - NO financial modeling: do not discuss valuation, price targets, DCF, multiples, margins, or financial forecasts anywhere.
 - NO management-team section.
 - NO conclusion / summary section. End naturally after the Investment Analysis section.
-- Target length: a substantial deep-dive aimed at roughly 4,000-5,000 words so rendered PDF output is roughly 5 pages. Do not be brief. Keep the academic style concentrated in Technology Breakdown; keep the other sections institutional and readable.
+- Target length: 2,200-3,500 words so the rendered PDF is 3-6 pages. Do not pad — stop when the content is complete. Keep the academic style concentrated in Technology Breakdown; keep the other sections tight and institutional.
+- CRITICAL: every Mermaid flowchart must fit within half a printed PDF page. Keep diagrams compact: 6-12 nodes maximum, short labels (≤3 words), 2-4 branches. Never produce a diagram so large it would overflow one page.
 
 Research papers for grounding the technology section:
 ${arxivBlock}
@@ -659,7 +660,8 @@ Use 3-5 products. Copy image URLs verbatim from PRODUCT IMAGES below. If no imag
 - Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises.
 - Investment Analysis: flowing institutional prose covering catalysts, risks, variant perception, competitive dynamics, and what to monitor. Do not use valuation, DCF, multiples, price targets, or financial forecasts.
 - Do not include a management-team section.
-- Target length: roughly 3,800-4,500 words so the rendered PDF is roughly 5 pages; keep the academic writing style concentrated in Technology Breakdown.
+- Target length: 2,200-3,500 words so the rendered PDF is 3-6 pages. Do not pad — stop when content is complete. Keep academic style concentrated in Technology Breakdown; all other sections tight.
+- CRITICAL: every Mermaid flowchart must fit within half a printed PDF page. Keep diagrams compact: 6-12 nodes maximum, short labels (≤3 words), 2-4 branches.
 ${productBlock(products)}
 Public context:
 ${contextMarkdown.slice(0, 14000)}`
