@@ -205,6 +205,42 @@ async function renderMermaidSerialized(source: string): Promise<string> {
   return run
 }
 
+function ProductGrid({ json }: { json: string }) {
+  type Product = { url: string; name: string; description: string }
+  let products: Product[] = []
+  try {
+    const parsed = JSON.parse(json)
+    if (Array.isArray(parsed)) products = parsed
+  } catch {
+    return null
+  }
+  if (!products.length) return null
+
+  return (
+    <div className="sidereus-product-grid my-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {products.map((p, i) => (
+        <div key={i} className="sidereus-product-card overflow-hidden rounded border border-black/15">
+          <img
+            src={p.url}
+            alt={p.name}
+            className="sidereus-product-card-img block h-28 w-full object-cover"
+            onError={(e) => {
+              const card = e.currentTarget.closest('.sidereus-product-card') as HTMLElement | null
+              if (card) card.style.display = 'none'
+            }}
+          />
+          <div className="sidereus-product-card-info p-2">
+            <p className="sidereus-product-card-name text-xs font-semibold text-black">{p.name}</p>
+            {p.description && (
+              <p className="sidereus-product-card-desc mt-0.5 text-[11px] leading-tight text-black/65">{p.description}</p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function MermaidBlock({ chart }: { chart: string }) {
   const [svg, setSvg] = useState('')
   const [error, setError] = useState('')
@@ -509,6 +545,9 @@ export default function DashboardClient() {
                         code({ className, children, ...props }) {
                           const language = /language-(\w+)/.exec(className || '')?.[1]
                           const codeText = String(children).replace(/\n$/, '')
+                          if (language === 'product-grid') {
+                            return <ProductGrid json={codeText} />
+                          }
                           const normalized = normalizeMermaidSource(codeText)
                           const shouldRenderMermaid =
                             language === 'mermaid' || (!language && isLikelyMermaid(codeText))

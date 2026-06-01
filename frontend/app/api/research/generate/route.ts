@@ -8,6 +8,10 @@ type GenerateBody = {
   fast?: boolean
 }
 
+type ProductImage = { url: string; name: string }
+type ProductData = { images: ProductImage[]; pageText: string }
+const EMPTY_PRODUCTS: ProductData = { images: [], pageText: '' }
+
 type ContextBundle = {
   quote: Record<string, unknown> | null
   news: Array<Record<string, unknown>>
@@ -26,6 +30,7 @@ const REPORT_SECTIONS = [
   'Key Market Data',
   'Company Overview',
   'Technology Breakdown',
+  'Product Breakdown',
   'Supply Chain Analysis',
   'Investment Analysis',
 ]
@@ -222,6 +227,96 @@ async function fetchYahooNews(ticker: string) {
   }
 }
 
+// Scrape product images from the company's own website.
+// Uses Yahoo Finance assetProfile to discover the website URL, then fetches
+// the homepage and common product pages to extract og:image meta tags and
+// product-section <img> tags. Runs in parallel with LLM calls so it adds
+// no wall-clock time to the generation pipeline.
+async function fetchProductData(ticker: string): Promise<ProductData> {
+  // Step 1: get company website from Yahoo Finance assetProfile
+  let website: string | null = null
+  try {
+    const auth = await getYahooCrumb()
+    const profileUrl = auth
+      ? `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=assetProfile&crumb=${encodeURIComponent(auth.crumb)}`
+      : `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=assetProfile`
+    const headers: Record<string, string> = { 'User-Agent': YF_UA }
+    if (auth) headers['Cookie'] = auth.cookie
+    const data = await fetchJson(profileUrl, { headers }, 5000)
+    website = data?.quoteSummary?.result?.[0]?.assetProfile?.website ?? null
+  } catch {
+    return EMPTY_PRODUCTS
+  }
+  if (!website) return EMPTY_PRODUCTS
+
+  let baseOrigin: string
+  try {
+    baseOrigin = new URL(website.startsWith('http') ? website : `https://${website}`).origin
+  } catch {
+    return EMPTY_PRODUCTS
+  }
+
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+  const seen = new Set<string>()
+  const images: ProductImage[] = []
+  let pageText = ''
+
+  const extractFromHtml = (html: string, base: string) => {
+    // og:image / twitter:image meta tags — reliable on every major company site
+    const metaPatterns = [
+      /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"'>]+)["']/i,
+      /<meta[^>]+content=["']([^"'>]+)["'][^>]+property=["']og:image["']/i,
+      /<meta[^>]+name=["']twitter:image(?::[^"']+)?["'][^>]+content=["']([^"'>]+)["']/i,
+      /<meta[^>]+content=["']([^"'>]+)["'][^>]+name=["']twitter:image/i,
+    ]
+    for (const pat of metaPatterns) {
+      const m = html.match(pat)
+      if (m?.[1]) {
+        const url = m[1].startsWith('http') ? m[1] : `${base}${m[1].startsWith('/') ? '' : '/'}${m[1]}`
+        if (!seen.has(url) && /\.(jpg|jpeg|png|webp)/i.test(url)) {
+          seen.add(url); images.push({ url, name: 'Product' })
+        }
+      }
+    }
+
+    // img tags inside product/solution/card/gallery sections
+    const sectionRe = /<(?:section|div|article)[^>]*class=["'][^"']*(?:product|solution|feature|card|gallery|catalog|item)[^"']*["'][^>]*>([\s\S]{80,3000}?)<\/(?:section|div|article)>/gi
+    let sec: RegExpExecArray | null
+    while ((sec = sectionRe.exec(html)) !== null && images.length < 8) {
+      // match src or data-src (lazy-load) with alt
+      const imgRe = /<img[^>]+(?:(?:src|data-src|data-lazy-src)=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"'"]*)["'][^>]*(?:alt=["']([^"']*)["'])?|alt=["']([^"']*)["'][^>]*(?:src|data-src)=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)["'])/gi
+      let img: RegExpExecArray | null
+      while ((img = imgRe.exec(sec[1])) !== null && images.length < 8) {
+        const src = img[1] || img[4]
+        const alt = (img[2] || img[3] || '').trim()
+        if (!src) continue
+        if (/logo|icon|sprite|avatar|banner|arrow|chevron|flag/i.test(alt + src)) continue
+        const url = src.startsWith('http') ? src : src.startsWith('//') ? `https:${src}` : `${base}${src.startsWith('/') ? '' : '/'}${src}`
+        if (!seen.has(url)) { seen.add(url); images.push({ url, name: alt || 'Product' }) }
+      }
+    }
+  }
+
+  const fetchPage = async (url: string) => {
+    try {
+      const html = await fetchText(url, { headers: { 'User-Agent': ua, Accept: 'text/html' } }, 5000)
+      extractFromHtml(html, baseOrigin)
+      if (!pageText) pageText = stripHtml(html).slice(0, 3000)
+    } catch { /* ignore */ }
+  }
+
+  // Fetch homepage first, then product pages if we still need more images
+  await fetchPage(baseOrigin)
+  if (images.length < 3) {
+    for (const path of ['/products', '/en-us/products', '/solutions', '/technologies', '/en/products']) {
+      if (images.length >= 6) break
+      await fetchPage(baseOrigin + path)
+    }
+  }
+
+  return { images: images.slice(0, 6), pageText: pageText.slice(0, 3000) }
+}
+
 function fmtMoney(value: unknown): string {
   const n = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(n) || n === 0) return 'N/A'
@@ -365,6 +460,18 @@ Public context:
 ${contextMarkdown}`
 }
 
+function productBlock(products: ProductData): string {
+  if (!products.images.length) return ''
+  return [
+    '',
+    'PRODUCT IMAGES (scraped from the company website — copy these URLs verbatim into the product-grid block):',
+    ...products.images.map((img, i) => `  ${i + 1}. ${img.url}  [${img.name}]`),
+    '',
+    'PRODUCT PAGE TEXT (use this to write product descriptions):',
+    products.pageText.slice(0, 1500),
+  ].join('\n')
+}
+
 // STEP 2 — GPT-4o Mini: turn facts into diagrams, flowcharts, explainers, tables.
 function buildVisualsPrompt(ticker: string, domain: string, factsMarkdown: string) {
   return `You are the technical illustration and academic apparatus layer of Sidereus. Using the extracted facts below for ${ticker}, produce a VISUAL ASSET PACK in markdown. Be technically accurate, visually rich, and educational with the rigor of a graduate-level technical appendix.
@@ -444,6 +551,7 @@ function buildFinalPrompt(
   factsMarkdown: string,
   visualsMarkdown: string,
   arxiv: ContextBundle['arxiv'],
+  products: ProductData,
 ) {
   const arxivBlock = arxiv.length
     ? arxiv.map((p) => `- ${p.title} — ${p.url}`).join('\n')
@@ -474,6 +582,18 @@ What the company does, core products, business model, key customers, and industr
 ## Technology Breakdown
 This is the only academic-style section and it must be the deepest part of the report. Write it like a technical paper section for a generalist investor: at least 2 rendered PDF pages, with first-principles explanation, clearly defined mechanisms, display equations, figure captions, and evidence-grounded claims. Embed the engineering/system-architecture, manufacturing-process, and mechanism-sketch Mermaid diagrams from the visual pack here. Use the technology explainers, equations, and tables. Ground claims in engineering principles and, where relevant, the research literature below. Make a generalist genuinely understand how it works.
 
+## Product Breakdown
+Present the company's key products as a visual grid using the image URLs in PRODUCT IMAGES.
+Write a sharp 10-15 word investor-focused description for each product (what it does, why it matters commercially).
+Output exactly this code fence — no other content in this section:
+\`\`\`product-grid
+[
+  {"url": "EXACT_URL_FROM_LIST", "name": "Product Name", "description": "10-15 word investor-focused description"},
+  {"url": "EXACT_URL_FROM_LIST", "name": "Product Name", "description": "10-15 word investor-focused description"}
+]
+\`\`\`
+Include 3-5 products. Use only the URLs from PRODUCT IMAGES — copy them verbatim. If PRODUCT IMAGES is empty, output \`\`\`product-grid\n[]\n\`\`\`.
+
 ## Supply Chain Analysis
 Embed the end-to-end supply-chain Mermaid flowchart from the visual pack. Walk the chain node by node (upstream suppliers, manufacturing partners, distribution, end customers, dependencies, bottlenecks). For each node explain the economics, the competitive landscape, the key players, and the strategic importance. Use the supply-chain table if provided.
 
@@ -494,7 +614,7 @@ ${factsMarkdown}
 
 Visual asset pack (embed the mermaid diagrams verbatim, use the explainers/tables):
 ${visualsMarkdown}
-
+${productBlock(products)}
 Return only the article in markdown.`
 }
 
@@ -504,6 +624,7 @@ function buildFastPrompt(
   companyName: string,
   priceFacts: string,
   contextMarkdown: string,
+  products: ProductData,
 ) {
   return `Write a fast institutional research report on ${companyName} (${ticker}) in the ${domain} domain.
 
@@ -511,7 +632,7 @@ Use the public context below. Prioritize specificity, evidence from filings/news
 
 Formatting rules:
 - Return only markdown.
-- Use exactly these level-2 headings, in order: Key Market Data, Company Overview, Technology Breakdown, Supply Chain Analysis, Investment Analysis.
+- Use exactly these level-2 headings, in order: Key Market Data, Company Overview, Technology Breakdown, Product Breakdown, Supply Chain Analysis, Investment Analysis.
 - Put one empty line between paragraphs and subsections.
 - Make section titles bold by using level-2 markdown headings.
 - Keep Key Market Data and Company Overview concise enough to fit together on the PDF title page. Begin the deep-dive content with Technology Breakdown after those two sections.
@@ -527,11 +648,19 @@ Section requirements:
 ${priceFacts}
 - Company Overview: business model, products, customers, positioning. Keep it compact and concrete.
 - Technology Breakdown: this is the only academic-style section. Make it the deepest part of the report, at least 2 rendered PDF pages, with first-principles explanation, one colored Mermaid sketch or graph, 2-3 advanced display equations in $$...$$ blocks, figure captions, and explanations of every variable. Use multi-variable equations tied to the actual technology: crystal-growth kinetics, defect-density / yield models, thermal transport, network bandwidth and latency, pharmacokinetics, trial statistics, or queueing / power-constrained capacity. Do not use elementary ratio formulas such as Throughput = Total Output / Total Time or Yield = Good Units / Total Units.
+- Product Breakdown: output ONLY this code fence — no other prose:
+\`\`\`product-grid
+[
+  {"url": "EXACT_URL", "name": "Product Name", "description": "10-15 word investor description"},
+  ...
+]
+\`\`\`
+Use 3-5 products. Copy image URLs verbatim from PRODUCT IMAGES below. If no images provided, output \`\`\`product-grid\n[]\n\`\`\`.
 - Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises.
 - Investment Analysis: flowing institutional prose covering catalysts, risks, variant perception, competitive dynamics, and what to monitor. Do not use valuation, DCF, multiples, price targets, or financial forecasts.
 - Do not include a management-team section.
 - Target length: roughly 3,800-4,500 words so the rendered PDF is roughly 5 pages; keep the academic writing style concentrated in Technology Breakdown.
-
+${productBlock(products)}
 Public context:
 ${contextMarkdown.slice(0, 14000)}`
 }
@@ -643,19 +772,18 @@ export async function POST(req: NextRequest) {
     const backendUrl = process.env.BACKEND_API_URL
     const backendSecret = process.env.BACKEND_API_SECRET
 
-    // Collect context up-front so we always have price facts.
+    // Collect context + product images in parallel up-front.
     const emptyContext: ContextBundle = { quote: null, news: [], sec: { filings: [] }, arxiv: [] }
-    const context = await withTimeout(
-      collectContext(ticker, domain, fastMode),
-      fastMode ? FAST_CONTEXT_TIMEOUT_MS : 25000,
-      emptyContext,
-    )
+    const [context, products] = await Promise.all([
+      withTimeout(collectContext(ticker, domain, fastMode), fastMode ? FAST_CONTEXT_TIMEOUT_MS : 25000, emptyContext),
+      withTimeout(fetchProductData(ticker), fastMode ? 8000 : 12000, EMPTY_PRODUCTS),
+    ])
     const priceFacts = priceFactsMarkdown(context.quote)
     const contextMarkdown = contextToMarkdown(context)
     const companyName = context.sec.companyName || String(context.quote?.longName || context.quote?.shortName || ticker)
 
     if (fastMode) {
-      const prompt = buildFastPrompt(ticker, domain, companyName, priceFacts, contextMarkdown)
+      const prompt = buildFastPrompt(ticker, domain, companyName, priceFacts, contextMarkdown, products)
       const hasOpenAI = Boolean(process.env.OPENAI_API_KEY || process.env.OpenAI)
       const fastReport = hasOpenAI
         ? await callOpenAI(
@@ -731,13 +859,13 @@ export async function POST(req: NextRequest) {
 
     // ── STEP 3: Claude Sonnet writes the final article ────────────
     let finalReport = await callAnthropic(
-      buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv),
+      buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, products),
       8192,
     )
     // Fallback: GPT-4o-mini writes the final article.
     if (!finalReport) {
       finalReport = await callOpenAI(
-        buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv),
+        buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, products),
         'You are an institutional equity research analyst. Return only the article in markdown.',
         10000,
       )
