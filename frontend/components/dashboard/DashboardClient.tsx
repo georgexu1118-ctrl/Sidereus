@@ -157,6 +157,48 @@ async function waitForPrintAssets(root: HTMLElement) {
   }
 }
 
+// Load + initialize mermaid exactly once, regardless of how many charts mount.
+let mermaidLoader: Promise<typeof import('mermaid').default> | null = null
+async function loadMermaid() {
+  if (!mermaidLoader) {
+    mermaidLoader = import('mermaid').then((mod) => {
+      mod.default.initialize({
+        startOnLoad: false,
+        securityLevel: 'loose',
+        theme: 'default',
+      })
+      return mod.default
+    })
+  }
+  return mermaidLoader
+}
+
+// mermaid.render() mutates shared global state and a shared DOM scratch node,
+// so it is NOT safe to run concurrently. A report mounts several diagrams at
+// once (3 technology + 1 supply chain); parallel renders clobber each other
+// and charts intermittently fail to appear in the preview and the PDF.
+// Serialize every render through one promise chain so only one runs at a time.
+let mermaidRenderChain: Promise<unknown> = Promise.resolve()
+let mermaidRenderSeq = 0
+async function renderMermaidSerialized(source: string): Promise<string> {
+  const mermaid = await loadMermaid()
+  const run = mermaidRenderChain.then(async () => {
+    const id = `mermaid-${Date.now().toString(36)}-${mermaidRenderSeq++}`
+    try {
+      const { svg } = await mermaid.render(id, source)
+      return svg
+    } finally {
+      // mermaid can leave an orphaned measurement/error node behind on
+      // failure; remove it so it cannot pollute the next render or the DOM.
+      document.getElementById(`d${id}`)?.remove()
+      document.getElementById(id)?.remove()
+    }
+  })
+  // Keep the chain alive for the next render even if this one rejects.
+  mermaidRenderChain = run.catch(() => undefined)
+  return run
+}
+
 function MermaidBlock({ chart }: { chart: string }) {
   const [svg, setSvg] = useState('')
   const [error, setError] = useState('')
@@ -164,33 +206,28 @@ function MermaidBlock({ chart }: { chart: string }) {
   useEffect(() => {
     let cancelled = false
     async function renderChart() {
-      try {
-        const mermaidModule = await import('mermaid')
-        mermaidModule.default.initialize({
-          startOnLoad: false,
-          securityLevel: 'loose',
-          theme: 'default',
-        })
-        const candidates = Array.from(new Set([chart, sanitizeMermaidSource(chart)]))
+      const candidates = Array.from(new Set([chart, sanitizeMermaidSource(chart)]))
+      // Two attempts: a fresh page load can have fonts/layout not yet ready,
+      // and a serialized retry clears almost all transient render failures.
+      for (let attempt = 0; attempt < 2; attempt++) {
         for (const candidate of candidates) {
           try {
-            const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`
-            const { svg: renderedSvg } = await mermaidModule.default.render(id, candidate)
-            if (!cancelled) {
-              setSvg(renderedSvg)
-              setError('')
-            }
+            const renderedSvg = await renderMermaidSerialized(candidate)
+            if (cancelled) return
+            setSvg(renderedSvg)
+            setError('')
             return
           } catch {
-            continue
+            // fall through to the next candidate / attempt
           }
         }
-        throw new Error('Mermaid render failed')
-      } catch {
-        if (!cancelled) {
-          setSvg('')
-          setError('Mermaid render failed')
+        if (attempt === 0 && !cancelled) {
+          await new Promise((resolve) => setTimeout(resolve, 200))
         }
+      }
+      if (!cancelled) {
+        setSvg('')
+        setError('Mermaid render failed')
       }
     }
     void renderChart()
