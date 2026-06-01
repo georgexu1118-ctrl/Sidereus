@@ -134,7 +134,9 @@ function groupPrintSections(sourceBody: Element) {
 
 async function waitForPrintReadiness(sourceBody: Element) {
   const started = Date.now()
-  while (sourceBody.textContent?.includes('Rendering chart...') && Date.now() - started < 10000) {
+  // 20s ceiling: each chart has a 7s per-render timeout, so 4 charts can each
+  // time out and recover within 28s total; 20s covers the common 2-3 chart case.
+  while (sourceBody.textContent?.includes('Rendering chart...') && Date.now() - started < 20000) {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
 
@@ -184,22 +186,39 @@ async function loadMermaid() {
 // once (3 technology + 1 supply chain); parallel renders clobber each other
 // and charts intermittently fail to appear in the preview and the PDF.
 // Serialize every render through one promise chain so only one runs at a time.
+// Each render also has a hard 7-second timeout: if mermaid.render() hangs
+// (e.g. pathological Mermaid syntax like WOLF's SiC process diagram), the
+// timeout rejects the promise so the chain unblocks for subsequent charts
+// instead of leaving every card stuck on "Rendering chart...".
 let mermaidRenderChain: Promise<unknown> = Promise.resolve()
 let mermaidRenderSeq = 0
 async function renderMermaidSerialized(source: string): Promise<string> {
   const mermaid = await loadMermaid()
-  const run = mermaidRenderChain.then(async () => {
-    const id = `mermaid-${Date.now().toString(36)}-${mermaidRenderSeq++}`
-    try {
-      const { svg } = await mermaid.render(id, source)
-      return svg
-    } finally {
-      // mermaid can leave an orphaned measurement/error node behind on
-      // failure; remove it so it cannot pollute the next render or the DOM.
-      document.getElementById(`d${id}`)?.remove()
-      document.getElementById(id)?.remove()
-    }
-  })
+  const run = mermaidRenderChain.then(
+    () =>
+      new Promise<string>((resolve, reject) => {
+        const id = `mermaid-${Date.now().toString(36)}-${mermaidRenderSeq++}`
+        const timer = setTimeout(() => {
+          document.getElementById(`d${id}`)?.remove()
+          document.getElementById(id)?.remove()
+          reject(new Error('Mermaid render timeout'))
+        }, 7000)
+        mermaid
+          .render(id, source)
+          .then(({ svg }) => {
+            clearTimeout(timer)
+            resolve(svg)
+          })
+          .catch((err) => {
+            clearTimeout(timer)
+            reject(err)
+          })
+          .finally(() => {
+            document.getElementById(`d${id}`)?.remove()
+            document.getElementById(id)?.remove()
+          })
+      }),
+  )
   // Keep the chain alive for the next render even if this one rejects.
   mermaidRenderChain = run.catch(() => undefined)
   return run
