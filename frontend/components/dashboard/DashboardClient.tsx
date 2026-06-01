@@ -74,9 +74,15 @@ function markPrintBlocks(root: HTMLElement) {
   root.querySelectorAll('svg').forEach((svg) => {
     svg.closest('div')?.classList.add('sidereus-print-chart', 'sidereus-print-avoid')
   })
-  root.querySelectorAll<HTMLElement>('[data-section-title*="technology"]').forEach((section) => {
+  // Supply-chain chart: remove the page-break-force and add a size cap so it
+  // stays on the same page as its heading instead of spilling across 3 pages.
+  root.querySelectorAll<HTMLElement>('[data-section-title*="supply chain"]').forEach((section) => {
     section.querySelectorAll('svg').forEach((svg) => {
-      svg.closest('div')?.classList.add('sidereus-print-tech-chart')
+      const chartDiv = svg.closest('div') as HTMLElement | null
+      if (chartDiv) {
+        chartDiv.classList.remove('sidereus-print-avoid')
+        chartDiv.classList.add('sidereus-print-supply-chain-chart')
+      }
     })
   })
 }

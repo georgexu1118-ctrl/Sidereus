@@ -372,29 +372,24 @@ function buildVisualsPrompt(ticker: string, domain: string, factsMarkdown: strin
 Produce these assets, each clearly labelled:
 
 A) TECHNOLOGY DIAGRAMS - 3 Mermaid diagrams that explain how the core technology works:
-   - An engineering / system-architecture diagram
-   - A manufacturing-process diagram (process steps)
+   - An engineering / system-architecture diagram (flowchart LR or TB)
+   - A manufacturing-process diagram (flowchart showing process steps)
    - A mechanism sketch / physics sketch / molecular-pathway sketch, depending on the company domain
    Use this fence format exactly:
    \`\`\`mermaid
    flowchart LR
        A[Component<br/>detail] --> B[Next stage<br/>detail]
    \`\`\`
-   HARD constraints for ALL THREE technology diagrams:
-   - ALWAYS use \`flowchart LR\` (horizontal left-to-right). Never use TB, TD, or BT — the printed PDF cannot accommodate tall vertical charts.
-   - Keep each diagram compact: 6-10 total nodes maximum, 1-2 short branches.
-   - Node labels must be very short (1-3 words, max ~14 characters). Use <br/> only when essential.
-   - Label edges with the real interface/material in 1-2 words.
-   - Add color classDef rules for at least three node classes (focal, dependency, customer or biology/compute/material).
-   - Each diagram must fit within roughly one third of a printed PDF page when rendered.
+   Keep node labels short, use <br/> for line breaks, label edges with the real interface/material. Add color classDef rules for at least three node classes (focal, dependency, customer or biology/compute/material) so the diagrams resemble polished academic figures.
 
 B) SUPPLY CHAIN FLOWCHART - one rich, multi-branch end-to-end Mermaid map (flowchart LR),
    modelled on a professional analyst's supply-chain map: ${ticker} sits on the left and
    FANS OUT through named intermediaries to many downstream end customers.
+   - Keep the diagram compact: exactly 3-4 distinct parallel branches and 10-14 total nodes with short labels (≤3 words per node). It must fit within the top half of one printed PDF page.
    - Use $TICKER notation for public companies (e.g. $NVDA, $AMZN, $MSFT, $GOOGL, $AVGO).
    - Group related paths into labelled subgraph clusters (one per key intermediary/partner),
      each showing that intermediary then its specific downstream customers.
-   - Show at least 4-6 distinct parallel branches / customer sets, e.g.
+   - Show 3-4 distinct parallel branches / customer sets, e.g.
      ${ticker} --> $PARTNER --> {several hyperscalers / OEMs / cloud providers}.
    - Name real companies where known (Microsoft, AWS, Google, Meta, Tencent, Baidu, ByteDance,
      Alibaba, plus integrators/partners specific to ${ticker}'s industry).
@@ -489,7 +484,7 @@ HARD CONSTRAINTS:
 - NO financial modeling: do not discuss valuation, price targets, DCF, multiples, margins, or financial forecasts anywhere.
 - NO management-team section.
 - NO conclusion / summary section. End naturally after the Investment Analysis section.
-- Target length: a substantial deep-dive aimed at roughly 3,200-4,200 words so rendered PDF output is at least 4 pages. Do not be brief. Keep the academic style concentrated in Technology Breakdown; keep the other sections institutional and readable.
+- Target length: a substantial deep-dive aimed at roughly 4,000-5,000 words so rendered PDF output is roughly 5 pages. Do not be brief. Keep the academic style concentrated in Technology Breakdown; keep the other sections institutional and readable.
 
 Research papers for grounding the technology section:
 ${arxivBlock}
@@ -512,7 +507,7 @@ function buildFastPrompt(
 ) {
   return `Write a fast institutional research report on ${companyName} (${ticker}) in the ${domain} domain.
 
-Use the public context below. Prioritize specificity, evidence from filings/news, and a clear investor narrative. The report must render to at least 4 PDF pages.
+Use the public context below. Prioritize specificity, evidence from filings/news, and a clear investor narrative. The report must render to roughly 5 PDF pages.
 
 Formatting rules:
 - Return only markdown.
@@ -535,7 +530,7 @@ ${priceFacts}
 - Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises.
 - Investment Analysis: flowing institutional prose covering catalysts, risks, variant perception, competitive dynamics, and what to monitor. Do not use valuation, DCF, multiples, price targets, or financial forecasts.
 - Do not include a management-team section.
-- Target length: roughly 3,000-3,800 words so the rendered PDF is at least 4 pages; keep the academic writing style concentrated in Technology Breakdown.
+- Target length: roughly 3,800-4,500 words so the rendered PDF is roughly 5 pages; keep the academic writing style concentrated in Technology Breakdown.
 
 Public context:
 ${contextMarkdown.slice(0, 14000)}`
