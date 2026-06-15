@@ -45,13 +45,43 @@ const OPENAI_MINI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 const FAST_CONTEXT_TIMEOUT_MS = 5000
 const FAST_MODEL_TIMEOUT_MS = 21000
 
+// European exchange ticker map: bare ticker → Yahoo Finance symbol with exchange suffix.
+// Add entries here as new European securities are covered.
+const EU_TICKER_MAP: Record<string, string> = {
+  'XFAB':    'XFAB.BR',   // X-Fab Silicon Foundries — Euronext Brussels
+  'SOITEC':  'SOI.PA',    // Soitec — Euronext Paris
+  'BESI':    'BESI.AS',   // BE Semiconductor Industries — Euronext Amsterdam
+  'AIXA':    'AIXA.DE',   // Aixtron — XETRA Frankfurt
+  'IFX':     'IFX.DE',    // Infineon Technologies — XETRA Frankfurt
+  'STM':     'STMEF',     // STMicroelectronics — NYSE ADR (already US-listed)
+  'SIVE':    'SIVE.MC',   // Try Euronext/BME Madrid
+  'AMS':     'AMS.SW',    // ams OSRAM — SIX Swiss Exchange
+  'COMET':   'COTN.SW',   // Comet Holding — SIX Swiss Exchange
+  'DISCO':   'DISCO.PA',  // Disco Corporation (EU-listed)
+}
+
+// European currency codes — used to detect when a company is European-listed
+const EU_CURRENCIES = new Set(['EUR', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF'])
+
 function detectDomain(ticker: string, domain?: string) {
   if (domain) return domain
-  const symbol = ticker.toUpperCase()
+  const symbol = ticker.toUpperCase().split('.')[0]  // strip exchange suffix for matching
   if (['NVDA', 'AMD', 'AVGO', 'ASML', 'ARM', 'LITE', 'COHR', 'AXTI', 'SNDK', 'AAOI', 'MRVL', 'MU'].includes(symbol)) return 'AI Supply Chain'
   if (['VRT', 'SMCI', 'CRWV', 'EQIX', 'DLR', 'DELL', 'HPE'].includes(symbol)) return 'Data Center Ecosystem'
   if (['MRNA', 'REGN', 'VRTX', 'GILD', 'ALNY', 'ABVX', 'BNTX', 'BIIB'].includes(symbol)) return 'Biotechnology'
+  // European specialty semiconductors: analog/mixed-signal, MEMS, SiC, power
+  if (['XFAB', 'AIXA', 'IFX', 'BESI', 'SOITEC', 'AMS', 'COMET'].includes(symbol)) return 'Specialty Semiconductors'
   return 'Frontier Technology'
+}
+
+// Resolve a bare ticker to its Yahoo Finance symbol (tries EU exchange suffix if needed).
+// Returns the resolved ticker and whether it was remapped to a European exchange.
+async function resolveYahooTicker(ticker: string): Promise<{ yTicker: string; isEuMapped: boolean }> {
+  // Already has an exchange suffix — use as-is
+  if (ticker.includes('.')) return { yTicker: ticker, isEuMapped: true }
+  // Known European mapping
+  if (EU_TICKER_MAP[ticker]) return { yTicker: EU_TICKER_MAP[ticker], isEuMapped: true }
+  return { yTicker: ticker, isEuMapped: false }
 }
 
 async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 8000) {
@@ -322,7 +352,12 @@ async function fetchProductData(ticker: string): Promise<ProductData> {
 
   await fetchAndExtract(baseOrigin)
   if (candidates.length < 4) {
-    for (const path of ['/products', '/en-us/products', '/solutions', '/technologies', '/en/products', '/products-services']) {
+    for (const path of [
+      '/products', '/en-us/products', '/solutions', '/technologies', '/en/products', '/products-services',
+      // European company paths
+      '/en/solutions', '/en-gb/products', '/de/produkte', '/fr/produits',
+      '/our-products', '/portfolio', '/product-portfolio', '/applications',
+    ]) {
       if (candidates.length >= 8) break
       await fetchAndExtract(baseOrigin + path)
     }
@@ -332,26 +367,40 @@ async function fetchProductData(ticker: string): Promise<ProductData> {
   return { images: top.map(({ url, name }) => ({ url, name })), pageText: pageText.slice(0, 3000) }
 }
 
-function fmtMoney(value: unknown): string {
+function currencySymbol(currency: string): string {
+  switch (currency) {
+    case 'EUR': return '€'
+    case 'GBP': return '£'
+    case 'CHF': return 'CHF '
+    case 'SEK': return 'kr '
+    case 'NOK': return 'kr '
+    case 'DKK': return 'kr '
+    default: return '$'
+  }
+}
+
+function fmtMoney(value: unknown, currency = 'USD'): string {
   const n = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(n) || n === 0) return 'N/A'
-  if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
-  if (Math.abs(n) >= 1e9) return `$${(n / 1e9).toFixed(2)}B`
-  if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(2)}M`
-  return `$${n.toFixed(2)}`
+  const sym = currencySymbol(currency)
+  if (Math.abs(n) >= 1e12) return `${sym}${(n / 1e12).toFixed(2)}T`
+  if (Math.abs(n) >= 1e9) return `${sym}${(n / 1e9).toFixed(2)}B`
+  if (Math.abs(n) >= 1e6) return `${sym}${(n / 1e6).toFixed(2)}M`
+  return `${sym}${n.toFixed(2)}`
 }
 
 function priceFactsMarkdown(quote: Record<string, unknown> | null): string {
   if (!quote) return 'Live price data unavailable from Yahoo Finance at generation time.'
   const price = quote.regularMarketPrice
   const currency = (quote.currency as string) || 'USD'
+  const sym = currencySymbol(currency)
   const marketCap = quote.marketCap
   const change = quote.regularMarketChangePercent
   const lines = [
-    `- Current share price: ${typeof price === 'number' ? `$${price.toFixed(2)} ${currency}` : 'N/A'}`,
+    `- Current share price: ${typeof price === 'number' ? `${sym}${price.toFixed(2)} ${currency}` : 'N/A'}`,
     typeof change === 'number' ? `- Day change: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '',
-    `- Market capitalization: ${fmtMoney(marketCap)}`,
-    `- 52-week range: ${quote.fiftyTwoWeekLow ? `$${quote.fiftyTwoWeekLow}` : 'N/A'} – ${quote.fiftyTwoWeekHigh ? `$${quote.fiftyTwoWeekHigh}` : 'N/A'}`,
+    `- Market capitalization: ${fmtMoney(marketCap, currency)}`,
+    `- 52-week range: ${quote.fiftyTwoWeekLow ? `${sym}${quote.fiftyTwoWeekLow}` : 'N/A'} – ${quote.fiftyTwoWeekHigh ? `${sym}${quote.fiftyTwoWeekHigh}` : 'N/A'}`,
   ].filter(Boolean)
   return lines.join('\n')
 }
@@ -418,16 +467,6 @@ async function fetchSecContext(ticker: string, excerptLimit = 22000): Promise<Om
   }
 }
 
-async function collectContext(ticker: string, domain: string, fast = false): Promise<ContextBundle> {
-  const [quote, news, sec] = await Promise.all([
-    fetchYahooQuote(ticker),
-    fetchYahooNews(ticker),
-    fetchSecContext(ticker, fast ? 6500 : 22000),
-  ])
-  // arXiv query: company name + domain keywords (best-effort grounding).
-  const arxiv = fast ? [] : await fetchArxiv(`${sec.companyName || ticker} ${domain.replace('Ecosystem', '').trim()}`)
-  return { quote, news, sec, arxiv }
-}
 
 function contextToMarkdown(context: ContextBundle) {
   return [
@@ -457,9 +496,17 @@ function contextToMarkdown(context: ContextBundle) {
 // ════════════════════════════════════════════════════════════════
 
 // STEP 1 — Claude Sonnet: read filings, extract facts.
-function buildClaudeExtractionPrompt(ticker: string, domain: string, contextMarkdown: string) {
-  return `You are the lead analyst at Sidereus. Read the SEC filings and public context below for ${ticker} (${domain}) and extract a dense, factual evidence pack. Do not write prose for an article yet — extract facts.
+function buildClaudeExtractionPrompt(ticker: string, domain: string, contextMarkdown: string, isEuropean: boolean) {
+  const euNote = isEuropean ? `
+IMPORTANT — EUROPEAN COMPANY: ${ticker} is traded on a European exchange and does NOT file with the US SEC. No SEC filings will be in the context. Compensate by:
+- Drawing on the news headlines, company website text, and any available financial data exhaustively.
+- Leveraging your knowledge of European semiconductor/technology companies, their customers (Bosch, Continental, STMicroelectronics, Volkswagen Group, Siemens, ASML, Infineon, Renault, Airbus, Safran, etc.), and European industry dynamics (EU Chips Act, automotive electrification, industrial IoT, SiC power devices, MEMS sensors).
+- Being more expansive on technology fundamentals and industry context since regulatory filing data is unavailable.
+- Distinguishing what is confirmed from public sources vs. inferred from domain knowledge.
+` : ''
 
+  return `You are the lead analyst at Sidereus. Read the context below for ${ticker} (${domain}) and extract a dense, factual evidence pack. Do not write prose for an article yet — extract facts.
+${euNote}
 Extract, with the source form/date where possible:
 1. What the company does, core products, business model, key customers, industry positioning.
 2. Technology and engineering details: how the products actually work, the underlying physics/process, manufacturing process steps, performance specifications, the technical moat.
@@ -488,7 +535,11 @@ function productBlock(products: ProductData): string {
 }
 
 // STEP 2 — GPT-4o Mini: turn facts into diagrams, flowcharts, explainers, tables.
-function buildVisualsPrompt(ticker: string, domain: string, factsMarkdown: string) {
+function buildVisualsPrompt(ticker: string, domain: string, factsMarkdown: string, isEuropean = false) {
+  const euSupplyChainNote = isEuropean ? `
+   EUROPEAN SUPPLY CHAIN: ${ticker} is a European company. Name real European and global companies in the supply chain: Bosch, Continental, Volkswagen Group, BMW, Daimler, Siemens, Infineon, STMicroelectronics, NXP, Renesas, Texas Instruments (as competitor/customer), ON Semiconductor, Wolfspeed, ROHM, Mitsubishi Electric, Fuji Electric, Denso, Panasonic, Airbus, Safran, ABB, Schneider Electric, as appropriate to ${ticker}'s actual markets.
+   For upstream suppliers include European specialty chemical and substrate suppliers where relevant.
+` : ''
   return `You are the technical illustration and academic apparatus layer of Sidereus. Using the extracted facts below for ${ticker}, produce a VISUAL ASSET PACK in markdown. Be technically accurate, visually rich, and educational with the rigor of a graduate-level technical appendix.
 
 Produce these assets, each clearly labelled:
@@ -514,7 +565,7 @@ B) SUPPLY CHAIN FLOWCHART - one rich, multi-branch end-to-end Mermaid map (flowc
    - Show 3-4 distinct parallel branches / customer sets, e.g.
      ${ticker} --> $PARTNER --> {several hyperscalers / OEMs / cloud providers}.
    - Name real companies where known (Microsoft, AWS, Google, Meta, Tencent, Baidu, ByteDance,
-     Alibaba, plus integrators/partners specific to ${ticker}'s industry).
+     Alibaba, plus integrators/partners specific to ${ticker}'s industry).${euSupplyChainNote}
    - Highlight ${ticker}'s own nodes with: classDef focal fill:#B5A6D8,stroke:#161310,color:#161310,font-weight:bold;
    Skeleton (replace with the real chain):
    \`\`\`mermaid
@@ -567,12 +618,26 @@ function buildFinalPrompt(
   visualsMarkdown: string,
   arxiv: ContextBundle['arxiv'],
   products: ProductData,
+  isEuropean = false,
 ) {
   const arxivBlock = arxiv.length
     ? arxiv.map((p) => `- ${p.title} — ${p.url}`).join('\n')
     : 'No specific papers retrieved; ground technology claims in established engineering principles.'
-  return `You are the lead analyst at Sidereus writing the final institutional research article on ${ticker} (${domain}).
 
+  const euNote = isEuropean ? `
+EUROPEAN COMPANY CONTEXT: ${ticker} is listed on a European exchange. No US SEC filings are available. To compensate:
+- Be more expansive and detailed in every section; write richer, longer paragraphs.
+- Reference European market context throughout: EU Chips Act / European Chips Act 2030 targets, European automotive electrification (Bosch, Continental, Valeo, Volkswagen Group, BMW, Mercedes-Benz, Stellantis, Renault), European industrial automation (Siemens, ABB, Schneider Electric), European aerospace and defense (Airbus, Safran, Leonardo, MBDA), and European supply chain resilience policy.
+- In the Supply Chain Analysis, name the actual European and global companies in the supply chain — do not use generic placeholders.
+- In the Investment Analysis, discuss European equity market context: European small/mid-cap liquidity, analyst coverage depth vs. US peers, EUR/USD currency exposure, European regulatory environment (REACH, EU Taxonomy, export controls), and any cross-listing or ADR considerations.
+` : ''
+
+  const wordTarget = isEuropean
+    ? '3,000-4,500 words so the rendered PDF is 4-7 pages. European companies with limited public filing data benefit from deeper industry and technology context — write thoroughly and do not cut short.'
+    : '2,200-3,500 words so the rendered PDF is 3-6 pages. Do not pad — stop when the content is complete.'
+
+  return `You are the lead analyst at Sidereus writing the final institutional research article on ${ticker} (${domain}).
+${euNote}
 Write in the voice of elite independent buy-side research (Citrini Research, Aleabitoreddit's OSINT supply-chain deep dives, SemiconSam's semiconductor depth): analytical, evidence-driven, thesis-oriented, industry-focused. Only the Technology Breakdown section should use a more academic paper style with equations, figure captions, and technical exposition. No marketing language. No bullet-point dumping in the investment section.
 
 FORMATTING (critical):
@@ -618,7 +683,7 @@ HARD CONSTRAINTS:
 - NO financial modeling: do not discuss valuation, price targets, DCF, multiples, margins, or financial forecasts anywhere.
 - NO management-team section.
 - NO conclusion / summary section. End naturally after the Investment Analysis section.
-- Target length: 2,200-3,500 words so the rendered PDF is 3-6 pages. Do not pad — stop when the content is complete. Keep the academic style concentrated in Technology Breakdown; keep the other sections tight and institutional.
+- Target length: ${wordTarget}
 - CRITICAL: every Mermaid flowchart must fit within half a printed PDF page. Keep diagrams compact: 6-12 nodes maximum, short labels (≤3 words), 2-4 branches. Never produce a diagram so large it would overflow one page.
 
 Research papers for grounding the technology section:
@@ -640,10 +705,24 @@ function buildFastPrompt(
   priceFacts: string,
   contextMarkdown: string,
   products: ProductData,
+  isEuropean = false,
 ) {
-  return `Write a fast institutional research report on ${companyName} (${ticker}) in the ${domain} domain.
+  const euNote = isEuropean ? `
+IMPORTANT — EUROPEAN COMPANY: ${companyName} (${ticker}) is listed on a European exchange. US SEC filings are NOT available. To compensate:
+- Draw on the news, website context, and your knowledge of this company and its European market extensively.
+- Reference European market dynamics: EU Chips Act, automotive electrification, industrial IoT, European defense/aerospace, European supply chain sovereignty.
+- Name real European and global companies in the supply chain (Bosch, Continental, Siemens, Infineon, STMicro, NXP, Airbus, ABB, Renault, BMW, etc.) as appropriate to ${ticker}'s actual markets.
+- In the Investment Analysis, discuss European equity market context: European small/mid-cap dynamics, analyst coverage, EUR/USD exposure, and European regulatory environment.
+- Write more expansively than you would for a US company with full SEC filing disclosure.
+` : ''
 
-Use the public context below. Prioritize specificity, evidence from filings/news, and a clear investor narrative. The report must render to roughly 5 PDF pages.
+  const wordTarget = isEuropean
+    ? '3,000-4,500 words (4-7 PDF pages). Write thoroughly — European companies with limited public filing data benefit from deeper industry and technology context.'
+    : '2,200-3,500 words so the rendered PDF is 3-6 pages. Do not pad — stop when content is complete.'
+
+  return `Write a fast institutional research report on ${companyName} (${ticker}) in the ${domain} domain.
+${euNote}
+Use the public context below. Prioritize specificity, evidence from filings/news, and a clear investor narrative.
 
 Formatting rules:
 - Return only markdown.
@@ -670,10 +749,11 @@ ${priceFacts}
 \`\`\`
 Use 3-5 products. Copy image URLs verbatim from PRODUCT IMAGES below.`
   : 'OMIT THIS SECTION ENTIRELY — no images available. Do not output the heading or any content.'}
-- Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises.
+- Supply Chain Analysis: map suppliers, manufacturing dependencies, partners, customers, bottlenecks, and who benefits if demand rises. Name real companies.
 - Investment Analysis: flowing institutional prose covering catalysts, risks, variant perception, competitive dynamics, and what to monitor. Do not use valuation, DCF, multiples, price targets, or financial forecasts.
 - Do not include a management-team section.
-- Target length: 2,200-3,500 words so the rendered PDF is 3-6 pages. Do not pad — stop when content is complete. Keep academic style concentrated in Technology Breakdown; all other sections tight.
+- Target length: ${wordTarget}
+- Keep academic style concentrated in Technology Breakdown; all other sections tight and evidence-driven.
 - CRITICAL: every Mermaid flowchart must fit within half a printed PDF page. Keep diagrams compact: 6-12 nodes maximum, short labels (≤3 words), 2-4 branches.
 ${productBlock(products)}
 Public context:
@@ -795,8 +875,13 @@ function normalizeBackendResponse(data: Record<string, unknown>, ticker: string,
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as GenerateBody
-    const ticker = body.ticker?.trim().toUpperCase().replace(/[^A-Z0-9.-]/g, '')
-    if (!ticker) return NextResponse.json({ error: 'ticker is required' }, { status: 400 })
+    const rawTicker = body.ticker?.trim().toUpperCase().replace(/[^A-Z0-9.-]/g, '')
+    if (!rawTicker) return NextResponse.json({ error: 'ticker is required' }, { status: 400 })
+
+    // Resolve European tickers (e.g. XFAB → XFAB.BR for Yahoo Finance)
+    const { yTicker, isEuMapped } = await resolveYahooTicker(rawTicker)
+    const ticker = rawTicker  // keep original for display / SEC lookup
+    const yFinTicker = yTicker  // use resolved ticker for Yahoo Finance calls
 
     const domain = detectDomain(ticker, body.domain)
     const fastMode = body.fast !== false
@@ -804,33 +889,50 @@ export async function POST(req: NextRequest) {
     const backendSecret = process.env.BACKEND_API_SECRET
 
     // Collect context + product images in parallel up-front.
+    // Use the Yahoo-resolved ticker for market data; original ticker for SEC.
     const emptyContext: ContextBundle = { quote: null, news: [], sec: { filings: [] }, arxiv: [] }
     const [context, products] = await Promise.all([
-      withTimeout(collectContext(ticker, domain, fastMode), fastMode ? FAST_CONTEXT_TIMEOUT_MS : 25000, emptyContext),
-      withTimeout(fetchProductData(ticker), fastMode ? 8000 : 12000, EMPTY_PRODUCTS),
+      withTimeout(
+        (async () => {
+          const [quote, news, sec] = await Promise.all([
+            fetchYahooQuote(yFinTicker),
+            fetchYahooNews(yFinTicker),
+            fetchSecContext(ticker, fastMode ? 6500 : 22000),
+          ])
+          const arxiv = fastMode ? [] : await fetchArxiv(`${sec.companyName || ticker} ${domain.replace('Ecosystem', '').trim()}`)
+          return { quote, news, sec, arxiv }
+        })(),
+        fastMode ? FAST_CONTEXT_TIMEOUT_MS : 25000,
+        emptyContext,
+      ),
+      withTimeout(fetchProductData(yFinTicker), fastMode ? 8000 : 12000, EMPTY_PRODUCTS),
     ])
     const priceFacts = priceFactsMarkdown(context.quote)
     const contextMarkdown = contextToMarkdown(context)
     const companyName = context.sec.companyName || String(context.quote?.longName || context.quote?.shortName || ticker)
 
+    // Detect European company: EU exchange mapping, EU currency, or no SEC filings + ticker has suffix
+    const quoteCurrency = String(context.quote?.currency || '')
+    const isEuropean = isEuMapped || EU_CURRENCIES.has(quoteCurrency) || (ticker.includes('.') && context.sec.filings.length === 0)
+
     const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY || process.env.Claude)
     const hasOpenAI = Boolean(process.env.OPENAI_API_KEY || process.env.OpenAI)
-    console.log(`[sidereus] ${ticker} | fast=${fastMode} | anthropic=${hasAnthropic} | openai=${hasOpenAI} | model=${CLAUDE_MODEL}`)
+    console.log(`[sidereus] ${ticker} | fast=${fastMode} | eu=${isEuropean} | anthropic=${hasAnthropic} | openai=${hasOpenAI} | model=${CLAUDE_MODEL}`)
 
     if (fastMode) {
-      const prompt = buildFastPrompt(ticker, domain, companyName, priceFacts, contextMarkdown, products)
+      const prompt = buildFastPrompt(ticker, domain, companyName, priceFacts, contextMarkdown, products, isEuropean)
       // Try OpenAI first (faster), then fall back to Anthropic if it fails.
       let fastReport: string | null = null
       if (hasOpenAI) {
         fastReport = await callOpenAI(
           prompt,
           'You are a fast institutional equity research writer. Return only markdown.',
-          6500,
+          isEuropean ? 8000 : 6500,
           FAST_MODEL_TIMEOUT_MS,
         )
       }
       if (!fastReport && hasAnthropic) {
-        fastReport = await callAnthropic(prompt, 6500, FAST_MODEL_TIMEOUT_MS)
+        fastReport = await callAnthropic(prompt, isEuropean ? 8000 : 6500, FAST_MODEL_TIMEOUT_MS)
       }
 
       if (fastReport) {
@@ -864,11 +966,11 @@ export async function POST(req: NextRequest) {
     }
 
     // ── STEP 1: Claude Sonnet reads filings and extracts facts ────
-    let factsMarkdown = await callAnthropic(buildClaudeExtractionPrompt(ticker, domain, contextMarkdown), 4096)
+    let factsMarkdown = await callAnthropic(buildClaudeExtractionPrompt(ticker, domain, contextMarkdown, isEuropean), 4096)
     // Fallback: GPT-4o-mini extraction if Claude unavailable.
     if (!factsMarkdown) {
       factsMarkdown = await callOpenAI(
-        buildClaudeExtractionPrompt(ticker, domain, contextMarkdown),
+        buildClaudeExtractionPrompt(ticker, domain, contextMarkdown, isEuropean),
         'You extract factual evidence for institutional equity research. Return only markdown.',
         3500,
       )
@@ -887,27 +989,28 @@ export async function POST(req: NextRequest) {
 
     // ── STEP 2: GPT-4o-mini builds diagrams, flowcharts, tables ───
     let visualsMarkdown = await callOpenAI(
-      buildVisualsPrompt(ticker, domain, facts),
+      buildVisualsPrompt(ticker, domain, facts, isEuropean),
       'You produce technically accurate Mermaid diagrams, educational explainers, and markdown tables. Return only the asset pack.',
       3500,
     )
     // Fallback: Claude builds visuals if OpenAI unavailable.
     if (!visualsMarkdown) {
-      visualsMarkdown = await callAnthropic(buildVisualsPrompt(ticker, domain, facts), 3000)
+      visualsMarkdown = await callAnthropic(buildVisualsPrompt(ticker, domain, facts, isEuropean), 3000)
     }
     const visuals = visualsMarkdown || 'No diagram pack available — describe the technology and supply chain in prose with clear structure.'
 
     // ── STEP 3: Claude Sonnet writes the final article ────────────
+    const finalTokens = isEuropean ? 10000 : 8192
     let finalReport = await callAnthropic(
-      buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, products),
-      8192,
+      buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, products, isEuropean),
+      finalTokens,
     )
     // Fallback: GPT-4o-mini writes the final article.
     if (!finalReport) {
       finalReport = await callOpenAI(
-        buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, products),
+        buildFinalPrompt(ticker, domain, priceFacts, facts, visuals, context.arxiv, products, isEuropean),
         'You are an institutional equity research analyst. Return only the article in markdown.',
-        10000,
+        isEuropean ? 12000 : 10000,
       )
     }
 
