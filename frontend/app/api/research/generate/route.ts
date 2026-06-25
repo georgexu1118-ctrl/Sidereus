@@ -40,10 +40,10 @@ const SEC_HEADERS = {
   Accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
 }
 
-const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_FAST_MODEL || 'claude-3-5-sonnet-latest'
+const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_FAST_MODEL || 'claude-sonnet-4-6'
 const OPENAI_MINI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-const FAST_CONTEXT_TIMEOUT_MS = 5000
-const FAST_MODEL_TIMEOUT_MS = 21000
+const FAST_CONTEXT_TIMEOUT_MS = 8000   // raised from 5s: crumb fetch alone can take 4s on cold start
+const FAST_MODEL_TIMEOUT_MS = 35000    // raised from 21s: GPT-4o-mini needs ~25-30s on long prompts
 
 // European exchange ticker map: bare ticker → Yahoo Finance symbol with exchange suffix.
 // Add entries here as new European securities are covered.
@@ -182,29 +182,34 @@ const YF_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 
 let yfCrumbCache: { crumb: string; cookie: string; ts: number } | null = null
+// Inflight dedup — concurrent callers share one in-flight crumb request instead of racing.
+let yfCrumbInflight: Promise<{ crumb: string; cookie: string } | null> | null = null
 
 async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null> {
-  // Cache the crumb for 10 minutes within a warm lambda.
   if (yfCrumbCache && Date.now() - yfCrumbCache.ts < 600_000) {
     return { crumb: yfCrumbCache.crumb, cookie: yfCrumbCache.cookie }
   }
-  try {
-    const cookieRes = await fetchWithTimeout('https://fc.yahoo.com', { headers: { 'User-Agent': YF_UA } }, 3500)
-    const setCookie =
-      (cookieRes.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.().join('; ') ||
-      cookieRes.headers.get('set-cookie') ||
-      ''
-    const cookie = setCookie.split(';')[0] || setCookie
-    const crumbRes = await fetchWithTimeout('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-      headers: { 'User-Agent': YF_UA, Cookie: cookie },
-    }, 3500)
-    const crumb = (await crumbRes.text()).trim()
-    if (!crumb || crumb.includes('<') || crumb.length > 40) return null
-    yfCrumbCache = { crumb, cookie, ts: Date.now() }
-    return { crumb, cookie }
-  } catch {
-    return null
-  }
+  if (yfCrumbInflight) return yfCrumbInflight
+  yfCrumbInflight = (async () => {
+    try {
+      const cookieRes = await fetchWithTimeout('https://fc.yahoo.com', { headers: { 'User-Agent': YF_UA } }, 2500)
+      const setCookie =
+        (cookieRes.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.().join('; ') ||
+        cookieRes.headers.get('set-cookie') ||
+        ''
+      const cookie = setCookie.split(';')[0] || setCookie
+      const crumbRes = await fetchWithTimeout('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+        headers: { 'User-Agent': YF_UA, Cookie: cookie },
+      }, 2500)
+      const crumb = (await crumbRes.text()).trim()
+      if (!crumb || crumb.includes('<') || crumb.length > 40) return null
+      yfCrumbCache = { crumb, cookie, ts: Date.now() }
+      return { crumb, cookie }
+    } catch {
+      return null
+    }
+  })().finally(() => { yfCrumbInflight = null })
+  return yfCrumbInflight
 }
 
 async function fetchYahooQuote(ticker: string) {
@@ -336,7 +341,7 @@ async function fetchProductData(ticker: string): Promise<ProductData> {
     try {
       const res = await fetchWithTimeout(pageUrl, {
         headers: { 'User-Agent': ua, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
-      }, 5000)
+      }, 3000)
       if (!res.ok) return
       const finalUrl = res.url  // actual URL after any redirects
       // Skip if we were redirected to an investor-relations page —
@@ -352,15 +357,12 @@ async function fetchProductData(ticker: string): Promise<ProductData> {
 
   await fetchAndExtract(baseOrigin)
   if (candidates.length < 4) {
-    for (const path of [
+    // Fetch all fallback paths in parallel so the outer timeout governs total wait, not N×per-path.
+    await Promise.allSettled([
       '/products', '/en-us/products', '/solutions', '/technologies', '/en/products', '/products-services',
-      // European company paths
       '/en/solutions', '/en-gb/products', '/de/produkte', '/fr/produits',
       '/our-products', '/portfolio', '/product-portfolio', '/applications',
-    ]) {
-      if (candidates.length >= 8) break
-      await fetchAndExtract(baseOrigin + path)
-    }
+    ].map(path => fetchAndExtract(baseOrigin + path)))
   }
 
   const top = candidates.sort((a, b) => b.score - a.score).slice(0, 6)
